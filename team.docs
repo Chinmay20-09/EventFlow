@@ -1,0 +1,47 @@
+# EventFlow
+ID	Document	MoSCoW	Purpose	Must Answer	Summary	a	Status	Dependency	Code Blocked?	Notes
+EV-001	README.md	MUST	Project entry point; explain EventFlow, core workflow, setup and links.	What is EventFlow and how do I run it?	Project entry point: what EventFlow is, the six-stage workflow, repository layout, how to run the static UI prototype, the canonical units and terminology, and current build status.	P5	Review		Yes	
+EV-002	PRD.md	MUST	Define product problem, users, scope, MVP features and behavior.	What are we building and what is in/out of scope?		P5	Not Started		Yes	
+EV-003	Architecture.md	MUST	Define architecture, folder structure, component boundaries and responsibility.	Where does every component live and what does it own?		P3	Not Started		Yes	
+EV-004	Domain_Model.md	MUST	Define EventFlow entities and terminology.	What does every core concept mean?		P5	Not Started		Yes	
+EV-005	Data_Model.md	MUST	Define PostgreSQL tables, fields, relationships and constraints.	How is data stored and related?		P3	Not Started		Yes	
+EV-006	Graph_model.md	MUST	Define graph nodes, edges, capacity, movement and state.	How is the event ecosystem represented as a graph?	Full node and directed-edge schemas with entity-scoped units (node capacity in people, edge capacity in people/minute), traversal and closure rules, Initial vs Current Graph, single-write-path status provenance, validation and simulation isolation.	P1	Review		Yes	
+EV-007	Crowd_model.md	MUST	Define crowd movement, accumulation, utilization and overload calculations.	How is crowd state calculated?	Aggregate crowd groups with a five-state machine, movement and flow equations, conservation with separately recorded adjustments, utilization, density, overload, queue and waiting/travel time, routing execution and a complete metric contract.	P1	Review		Yes	
+EV-008	Disruption_model.md	MUST	Define how rain, closures and transport disruption modify the network.	How does a disruption change the network?	Canonical disruption schema across nine types and four severity levels that are never converted into physical quantities, a DETECTED/ACTIVE/RESOLVED lifecycle, declared operational effects, timing, conflict rules and simulation isolation.	P1	Review		Yes	
+EV-009	Prediction.md	MUST	Define bottleneck prediction behavior and horizon.	How does EventFlow predict future overcrowding?	Forecasting contract with a configurable horizon, exact input and output schemas, confidence defined as reliability in [0,100], staleness and refresh rules, a deterministic fallback, mandatory explanations and a NO_PREDICTION failure path.	P1	Review		Yes	
+EV-010	Optimization.md	MUST	Define OR-Tools variables, constraints, objectives and outputs.	What mathematical problem does optimization solve?	Six bounded decision variables, nine hard constraints, a weighted and normalized objective, an OR-Tools mapping, deterministic ranking with stable tie-breaks, six result statuses and the operator approval handoff.	P1	Review		Yes	
+EV-011	Simulation.md	MUST	Define sandbox/digital-twin simulation and comparison process.	How are strategies tested before action?	Sandbox digital twin with a scenario schema, copied baselines, isolated state, deterministic time, disruption and intervention execution, optional prediction invocation, 17 metrics with units and six result statuses.	P1	Review		Yes	
+EV-012	Strategy_Model.md	MUST	Define mitigation strategy structure, actions and parameters.	What exactly is a mitigation strategy?		P2	Not Started		Yes	
+EV-013	Priority_Policy.md	MUST	Define safety, crowd reduction, cost and experience weighting.	How are competing objectives weighted?		P2	Not Started		Yes	
+EV-014	Decision_Workflow.md	MUST	Define detection through approval and execution lifecycle.	What is the complete decision flow?		P2	Not Started		Yes	
+EV-015	State_Machine.md	MUST	Define valid states and transitions.	Which states and transitions are allowed?		P3	Not Started		Yes	
+EV-016	API.md	MUST	Define backend endpoints and request/response contracts.	How do components communicate?		P3	Not Started		Yes	
+EV-017	Frontend.md	MUST	Define Command Center screens, components and interactions.	What must the organizer see and do?		P4	Not Started		Yes	
+EV-018	Traveler_App.md	MUST	Define Flutter traveler functionality and route/warning presentation.	What does the traveler app do?		P5	Not Started		Yes	
+EV-019	Provider_Interface.md	MUST	Define provider information and actions.	What do service providers receive/do?		P5	Not Started		Yes	
+EV-020	External_Data.md	MUST	Define weather, event, transport and other inputs.	What external information enters EventFlow?		P3	Not Started		Yes	
+EV-021	AI_Specification.md	MUST	Define AI responsibilities, inputs, outputs and boundaries.	Where is AI used and what is it not responsible for?		P2	Not Started		Yes	
+EV-022	Execution_Model.md	MUST	Define how approved strategies become actions and how status is tracked.	How does approval become execution?		P3	Not Started		Yes	
+EV-023	Security.md	MUST	Define authentication, authorization and sensitive operations.	Who may view, approve or execute?		P3	Not Started		Yes	
+EV-024	Error_Handling.md	MUST	Define behavior for engine, API, DB and external-data failures.	What happens when something fails?		P3	Not Started		Yes	
+EV-025	Testing.md	MUST	Define unit, integration, simulation, API and E2E tests.	How do we verify it works?		P5	Not Started		Yes	
+EV-026	Acceptance_Criteria.md	MUST	Define objective completion checks for requirements.	What proves a feature is complete?		P5	Not Started		Yes	
+EV-027	Demo_Scenario.md	MUST	Freeze exact hackathon scenario and expected results.	What exact story must work in the demo?		P5	Not Started		Yes	
+EV-028	Deployment.md	SHOULD	Define deployment architecture, environments and startup process.	How is the MVP deployed?		P5	Not Started		No	
+EV-029	Configuration.md	SHOULD	Define environment variables and settings.	How is EventFlow configured?		P3	Not Started		No	
+EV-030	Observability.md	SHOULD	Define logs, metrics and simulation traces.	How do we understand system behavior?		P5	Not Started		No	
+EV-031	Seed_Data.md	SHOULD	Define deterministic demo dataset.	What data powers the repeatable demo?		P5	Not Started		No	
+EV-032	Strategy_Catalog.md	SHOULD	List concrete MVP mitigation strategies and parameters.	Which strategies can we actually simulate?		P2	Not Started		No	
+EV-033	UI_Data_Contract.md	SHOULD	Define backend data consumed by UI components.	What exact data does the UI consume?		P4	Not Started		No	
+EV-034	ADR.md	SHOULD	Record major architectural decisions and rationale.	Why were key decisions made?		P5	Not Started		No	
+EV-035	Performance.md	COULD	Define response and simulation performance targets.	How fast should it be?		P5	Not Started		No	
+EV-036	Scalability.md	COULD	Describe possible scaling beyond MVP.	How could it grow later?		P5	Not Started		No	
+EV-037	API_Examples.md	COULD	Provide sample API requests/responses.	What do real API calls look like?		P3	Not Started		No	
+EV-038	Developer_Setup.md	COULD	Detailed local development setup.	How does a developer set it up?		P3	Not Started		No	
+EV-039	Glossary.md	COULD	Standardize terminology.	What do EventFlow terms mean?		P5	Not Started		No	
+EV-040	Future_Roadmap.md	COULD	Document features intentionally excluded from MVP.	What comes after the hackathon?		P5	Not Started		No	
+EV-041	Production_Infrastructure.md	WON'T	Defer advanced production infrastructure.	What production infrastructure is outside scope?		P5	Not Started		No	
+EV-042	ML_Research_Specification.md	WON'T	Defer elaborate ML research unless required by MVP.	What ML research is outside scope?		P2	Not Started		No	
+EV-043	Microservice_Architecture.md	WON'T	Avoid unnecessary microservice complexity.	Are microservices outside the MVP?		P3	Not Started		No	
+EV-044	Enterprise_Security_Architecture.md	WON'T	Defer enterprise-grade security architecture.	What enterprise security work is outside scope?		P3	Not Started		No	
+EV-045	Massive_Scalability_Design.md	WON'T	Defer hypothetical millions-of-users scaling.	What large-scale work is outside scope?		P5	Not Started		No	
