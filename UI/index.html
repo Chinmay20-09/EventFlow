@@ -1,0 +1,3854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>EventFlow</title>
+
+<link
+href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined"
+rel="stylesheet">
+
+<style>
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    font-family:Inter,Arial,sans-serif;
+    background:#f6f8fc;
+    color:#102034;
+}
+
+button{
+    font-family:inherit;
+    cursor:pointer;
+}
+
+.sidebar{
+    width:245px;
+    height:100vh;
+    position:fixed;
+    left:0;
+    top:0;
+    background:white;
+    border-right:1px solid #dfe5ef;
+    padding:22px 16px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+}
+
+.logo{
+    font-size:21px;
+    font-weight:700;
+    margin:4px 10px 25px;
+    color:#0b1c30;
+}
+
+.nav{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+}
+
+.nav button{
+    border:0;
+    background:transparent;
+    text-align:left;
+    padding:12px 14px;
+    border-radius:10px;
+    color:#596579;
+    font-weight:500;
+    font-size:14px;
+}
+
+.nav button:hover{
+    background:#eff4ff;
+}
+
+.nav button.active{
+    background:#dae5ff;
+    color:#174ca9;
+    font-weight:700;
+}
+
+.user{
+    border-top:1px solid #e5e9ef;
+    padding-top:16px;
+    font-size:13px;
+}
+
+.user strong{
+    display:block;
+    margin-bottom:4px;
+}
+
+.main{
+    margin-left:245px;
+    min-height:100vh;
+}
+
+.topbar{
+    height:64px;
+    background:rgba(255,255,255,.95);
+    border-bottom:1px solid #e2e6ed;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 28px;
+    position:sticky;
+    top:0;
+    z-index:20;
+}
+
+.live-pill{
+    background:#dff9ec;
+    color:#08764d;
+    padding:7px 12px;
+    border-radius:99px;
+    font-size:12px;
+    font-weight:700;
+}
+
+.context{
+    font-size:13px;
+    color:#657084;
+}
+
+.content{
+    padding:30px;
+}
+
+.page{
+    display:none;
+}
+
+.page.active{
+    display:block;
+}
+
+.page-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:24px;
+}
+
+.page-head h1{
+    margin:0;
+    font-size:29px;
+}
+
+.page-head p{
+    margin:6px 0 0;
+    color:#667286;
+    font-size:14px;
+}
+
+.card{
+    background:white;
+    border-radius:15px;
+    padding:20px;
+    box-shadow:0 4px 15px rgba(40,55,80,.06);
+}
+
+.grid-4{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:16px;
+    margin-bottom:20px;
+}
+
+.grid-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+}
+
+.metric-label{
+    font-size:12px;
+    color:#697386;
+    margin-bottom:7px;
+}
+
+.metric-value{
+    font-size:29px;
+    font-weight:700;
+}
+
+.badge{
+    padding:5px 9px;
+    border-radius:20px;
+    font-size:11px;
+    font-weight:700;
+    display:inline-block;
+    margin-top:7px;
+}
+
+.badge.red{
+    background:#ffe0dc;
+    color:#a91c15;
+}
+
+.badge.green{
+    background:#def7ea;
+    color:#08734a;
+}
+
+.badge.blue{
+    background:#e3ebff;
+    color:#1850ae;
+}
+
+.badge.gray{
+    background:#edf0f5;
+    color:#596579;
+}
+
+
+/* =====================================================
+   STITCH-STYLE LIVE MAP
+===================================================== */
+
+.map-wrap{
+    display:grid;
+    grid-template-columns:minmax(0,2.3fr) minmax(275px,.9fr);
+    gap:18px;
+    align-items:start;
+}
+
+.map-card{
+    padding:15px;
+}
+
+.map-card .section-title{
+    margin-bottom:11px;
+}
+
+.map-filter-row{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:11px;
+}
+
+.map-filter{
+    border:0;
+    background:#f4f7fc;
+    color:#586579;
+    padding:6px 10px;
+    font-size:10px;
+    font-weight:600;
+    border-radius:999px;
+    transition:.2s;
+}
+
+.map-filter:hover{
+    background:#e6edfa;
+}
+
+.map-filter.active{
+    color:white;
+    background:#1555c7;
+}
+
+.map{
+    height:520px;
+    border-radius:14px;
+    position:relative;
+    overflow:hidden;
+    border:1px solid #e4eaf2;
+
+    background:
+        linear-gradient(
+            90deg,
+            transparent 24%,
+            rgba(198,211,226,.25) 24.2%,
+            transparent 24.5%,
+            transparent 52%,
+            rgba(198,211,226,.22) 52.2%,
+            transparent 52.5%,
+            transparent 78%,
+            rgba(198,211,226,.20) 78.2%,
+            transparent 78.5%
+        ),
+        linear-gradient(
+            0deg,
+            transparent 23%,
+            rgba(198,211,226,.22) 23.2%,
+            transparent 23.5%,
+            transparent 51%,
+            rgba(198,211,226,.20) 51.2%,
+            transparent 51.5%,
+            transparent 76%,
+            rgba(198,211,226,.18) 76.2%,
+            transparent 76.5%
+        ),
+        #f1f7ff;
+}
+
+.map::after{
+    content:"";
+    position:absolute;
+    inset:0;
+
+    background:
+        radial-gradient(
+            ellipse at 80% 20%,
+            rgba(255,255,255,.5),
+            transparent 35%
+        );
+
+    pointer-events:none;
+}
+
+
+/* COAST / WATER */
+
+.coast{
+    position:absolute;
+    left:-110px;
+    top:-45px;
+    width:315px;
+    height:650px;
+    background:
+        linear-gradient(
+            130deg,
+            #d8eaff,
+            #e7f2ff
+        );
+    border-radius:0 60% 48% 0;
+    transform:rotate(-4deg);
+    z-index:1;
+}
+
+.coastline{
+    position:absolute;
+    left:185px;
+    top:-20px;
+    height:590px;
+    width:20px;
+    border-left:3px solid #86b7ea;
+    border-radius:50%;
+    transform:rotate(4deg);
+    z-index:2;
+    opacity:.8;
+}
+
+
+/* ROADS */
+
+.road{
+    position:absolute;
+    z-index:2;
+    height:2px;
+    background:#d1dce9;
+    border-radius:999px;
+    transform-origin:left center;
+}
+
+.road-major{
+    height:3px;
+    background:#c4d3e5;
+}
+
+.road1{
+    width:520px;
+    left:170px;
+    top:126px;
+    transform:rotate(0deg);
+}
+
+.road2{
+    width:470px;
+    left:195px;
+    top:273px;
+    transform:rotate(-1deg);
+}
+
+.road3{
+    width:420px;
+    left:185px;
+    top:405px;
+    transform:rotate(1deg);
+}
+
+.road4{
+    width:385px;
+    left:285px;
+    top:78px;
+    transform:rotate(89deg);
+}
+
+.road5{
+    width:340px;
+    left:430px;
+    top:106px;
+    transform:rotate(89deg);
+}
+
+.road6{
+    width:290px;
+    left:525px;
+    top:164px;
+    transform:rotate(82deg);
+}
+
+
+/* REDISTRIBUTION FLOW */
+
+.flow-path{
+    position:absolute;
+    width:155px;
+    height:115px;
+    left:290px;
+    top:145px;
+
+    border-top:3px dashed #de6c6c;
+    border-radius:50%;
+
+    transform:rotate(42deg);
+    z-index:3;
+}
+
+.flow-path2{
+    position:absolute;
+    width:175px;
+    height:105px;
+    left:315px;
+    top:235px;
+
+    border-top:3px dashed #df9d45;
+    border-radius:50%;
+
+    transform:rotate(158deg);
+    z-index:3;
+}
+
+
+/* RAIN ALERT */
+
+.weather-box{
+    position:absolute;
+    left:14px;
+    top:14px;
+    z-index:8;
+
+    background:rgba(255,255,255,.96);
+    padding:9px 11px;
+    border-radius:9px;
+
+    box-shadow:
+        0 4px 16px rgba(20,42,70,.08);
+
+    font-size:10px;
+    line-height:1.4;
+    color:#657084;
+}
+
+.weather-box strong{
+    color:#48566a;
+    display:block;
+}
+
+.weather-danger{
+    color:#d24a4a;
+    font-weight:700;
+}
+
+
+/* LOCATION POINTS */
+
+.map-point{
+    position:absolute;
+
+    width:12px;
+    height:12px;
+
+    border-radius:50%;
+
+    background:white;
+
+    border:3px solid #1555c7;
+
+    z-index:6;
+
+    box-shadow:
+        0 2px 8px rgba(15,44,80,.18);
+}
+
+.map-point.red{
+    border-color:#d53838;
+}
+
+.map-point.green{
+    border-color:#118157;
+}
+
+.map-point.orange{
+    border-color:#db8b22;
+}
+
+
+/* LOCATION LABELS */
+
+.map-tag{
+    position:absolute;
+
+    z-index:6;
+
+    font-size:9px;
+    font-weight:600;
+
+    color:#4d596d;
+
+    background:rgba(255,255,255,.94);
+
+    padding:4px 7px;
+
+    border-radius:5px;
+
+    box-shadow:
+        0 2px 8px rgba(30,50,75,.08);
+
+    white-space:nowrap;
+}
+
+.map-tag .dot{
+    display:inline-block;
+    width:5px;
+    height:5px;
+    margin-right:4px;
+    border-radius:50%;
+    background:#14885d;
+}
+
+
+/* CRITICAL ATTRACTION B */
+
+.attraction-alert{
+    position:absolute;
+    left:343px;
+    top:151px;
+    z-index:7;
+}
+
+.alert-dot{
+    width:28px;
+    height:28px;
+
+    border-radius:50%;
+
+    background:#ce3535;
+
+    color:white;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    box-shadow:
+        0 0 0 7px rgba(206,53,53,.11),
+        0 4px 10px rgba(32,40,55,.14);
+}
+
+
+/* TRANSIT A POPUP */
+
+.transit-card{
+    position:absolute;
+
+    left:395px;
+    top:150px;
+
+    width:275px;
+
+    z-index:12;
+
+    background:rgba(255,255,255,.98);
+
+    padding:14px;
+
+    border-radius:12px;
+
+    border:1px solid #e5eaf1;
+
+    box-shadow:
+        0 12px 28px rgba(22,45,72,.16);
+}
+
+.transit-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:8px;
+}
+
+.transit-head h4{
+    margin:0;
+    font-size:14px;
+    color:#1e2d40;
+}
+
+.transit-sub{
+    color:#778398;
+    font-size:9px;
+    margin-top:2px;
+}
+
+.transit-badge{
+    padding:4px 6px;
+
+    border-radius:5px;
+
+    font-size:8px;
+
+    font-weight:700;
+
+    color:#b12a28;
+
+    background:#ffe4e2;
+
+    white-space:nowrap;
+}
+
+.transit-grid{
+    display:grid;
+
+    grid-template-columns:1fr 1fr;
+
+    gap:7px;
+
+    margin-top:11px;
+}
+
+.transit-stat{
+    background:#f1f5fb;
+
+    border-radius:7px;
+
+    padding:8px;
+}
+
+.transit-stat span{
+    color:#7a8597;
+    font-size:8px;
+    display:block;
+    margin-bottom:2px;
+}
+
+.transit-stat strong{
+    display:block;
+
+    font-size:14px;
+
+    color:#223246;
+}
+
+.transit-stat strong.danger{
+    color:#cf3636;
+}
+
+.transit-note{
+    margin-top:9px;
+
+    padding:7px 8px;
+
+    border-radius:7px;
+
+    background:#edf5ff;
+
+    font-size:9px;
+
+    line-height:1.45;
+
+    color:#526177;
+}
+
+.transit-link{
+    margin-top:8px;
+    margin-left:auto;
+
+    display:block;
+
+    border:0;
+
+    background:none;
+
+    color:#1555c7;
+
+    font-size:10px;
+
+    font-weight:700;
+}
+
+
+/* MAP SCALE */
+
+.map-scale{
+    position:absolute;
+
+    left:13px;
+    bottom:12px;
+
+    z-index:8;
+
+    color:#718095;
+
+    font-size:8px;
+
+    padding:4px 6px;
+
+    border-radius:5px;
+
+    background:rgba(255,255,255,.88);
+}
+
+
+/* ZOOM BUTTONS */
+
+.zoom{
+    position:absolute;
+
+    right:12px;
+    bottom:12px;
+
+    z-index:12;
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:4px;
+}
+
+.zoom button{
+    width:27px;
+    height:27px;
+
+    border-radius:6px;
+
+    border:1px solid #dfe5ed;
+
+    background:white;
+
+    color:#506078;
+
+    font-size:14px;
+
+    box-shadow:
+        0 2px 7px rgba(30,50,75,.08);
+}
+
+
+/* RIGHT SIDE */
+
+.alert-card{
+    border-left:0;
+    border-top:4px solid #e46f6f;
+}
+
+.alert-title{
+    font-size:18px;
+    font-weight:700;
+    margin-bottom:8px;
+}
+
+.alert-text{
+    color:#606b7f;
+    line-height:1.6;
+    font-size:14px;
+}
+
+
+/* =====================================================
+   BUTTONS
+===================================================== */
+
+.btn{
+    border:0;
+    border-radius:9px;
+    padding:11px 15px;
+    font-weight:700;
+}
+
+.btn-primary{
+    background:#1555c7;
+    color:white;
+}
+
+.btn-primary:hover{
+    background:#0d46ad;
+}
+
+.btn-secondary{
+    background:#e8eef9;
+    color:#263950;
+}
+
+.btn-success{
+    background:#08764d;
+    color:white;
+}
+
+.btn-full{
+    width:100%;
+}
+
+
+/* =====================================================
+   OTHER PAGES
+===================================================== */
+
+.section-title{
+    font-size:18px;
+    font-weight:700;
+    margin-bottom:14px;
+}
+
+.scenario{
+    border-left:5px solid #c53030;
+}
+
+.compare{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:12px;
+}
+
+.compare-box{
+    padding:15px;
+    border-radius:12px;
+    background:#f0f4fb;
+}
+
+.compare-box .old{
+    color:#8a94a6;
+    text-decoration:line-through;
+    font-size:17px;
+}
+
+.compare-box .new{
+    color:#08764d;
+    font-size:24px;
+    font-weight:700;
+}
+
+.strategy{
+    border:2px solid transparent;
+    transition:.2s;
+}
+
+.strategy.selected{
+    border-color:#1555c7;
+    box-shadow:0 7px 22px rgba(21,85,199,.12);
+}
+
+.strategy h3{
+    margin:0 0 8px;
+}
+
+.strategy p{
+    color:#657084;
+    font-size:13px;
+    line-height:1.5;
+}
+
+.strategy ul{
+    padding-left:18px;
+    color:#596579;
+    font-size:13px;
+    line-height:1.7;
+}
+
+.recommended{
+    color:#08764d;
+    font-size:11px;
+    font-weight:700;
+    margin-bottom:7px;
+}
+
+.result{
+    margin-top:18px;
+    display:none;
+}
+
+.result.show{
+    display:block;
+}
+
+.result-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:12px;
+}
+
+.approval{
+    margin-top:18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
+    padding:18px;
+    background:white;
+    border-radius:14px;
+}
+
+.approval small{
+    color:#667286;
+}
+
+.success-banner{
+    background:white;
+    border-left:5px solid #08764d;
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:20px;
+}
+
+.success-banner h2{
+    margin:0 0 6px;
+}
+
+.flow{
+    position:relative;
+}
+
+.stakeholder{
+    min-height:360px;
+}
+
+.icon-circle{
+    width:42px;
+    height:42px;
+    border-radius:10px;
+    background:#e5edff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-bottom:12px;
+}
+
+.directive{
+    padding:12px;
+    border-radius:9px;
+    background:#f1f5fb;
+    margin:14px 0;
+    font-weight:600;
+}
+
+.stakeholder ul{
+    padding-left:18px;
+    color:#5e687a;
+    line-height:1.8;
+    font-size:13px;
+}
+
+.phone{
+    background:#eef3fb;
+    padding:10px;
+    border-radius:14px;
+}
+
+.phone-screen{
+    background:white;
+    border-radius:10px;
+    padding:12px;
+}
+
+.report-layout{
+    display:grid;
+    grid-template-columns:42% 58%;
+    gap:18px;
+}
+
+.report-item{
+    padding:16px;
+    border-radius:12px;
+    background:white;
+    margin-bottom:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,.05);
+}
+
+.report-item.selected{
+    border:2px solid #1555c7;
+}
+
+.timeline{
+    border-left:2px solid #d5dce8;
+    margin-left:9px;
+    padding-left:18px;
+}
+
+.timeline-item{
+    margin-bottom:14px;
+    position:relative;
+}
+
+.timeline-item::before{
+    content:"";
+    position:absolute;
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:#1555c7;
+    left:-24px;
+    top:5px;
+}
+
+.timeline-item strong{
+    font-size:13px;
+}
+
+.timeline-item p{
+    margin:3px 0;
+    color:#667286;
+    font-size:12px;
+}
+
+.toast{
+    position:fixed;
+    right:25px;
+    bottom:25px;
+    background:white;
+    border-left:5px solid #08764d;
+    padding:15px 18px;
+    border-radius:12px;
+    box-shadow:0 12px 35px rgba(0,0,0,.18);
+    display:none;
+    z-index:99;
+    min-width:300px;
+}
+
+.toast.show{
+    display:block;
+}
+
+
+
+.map-item{
+    transition:opacity .18s ease, transform .18s ease;
+}
+
+.map-item.map-hidden{
+    opacity:0;
+    pointer-events:none;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media(max-width:1150px){
+
+    .transit-card{
+        left:330px;
+        width:250px;
+    }
+
+}
+
+@media(max-width:1000px){
+
+    .grid-4,
+    .grid-3,
+    .result-grid{
+        grid-template-columns:1fr 1fr;
+    }
+
+    .map-wrap,
+    .report-layout{
+        grid-template-columns:1fr;
+    }
+
+    .transit-card{
+        left:auto;
+        right:40px;
+    }
+
+}
+
+@media(max-width:760px){
+
+    .sidebar{
+        width:190px;
+    }
+
+    .main{
+        margin-left:190px;
+    }
+
+    .content{
+        padding:18px;
+    }
+
+    .grid-4,
+    .grid-3,
+    .result-grid,
+    .compare{
+        grid-template-columns:1fr;
+    }
+
+    .transit-card{
+        left:25px;
+        right:25px;
+        width:auto;
+        top:195px;
+    }
+
+    .map{
+        height:570px;
+    }
+
+}
+
+
+/* =====================================================
+   GOOGLE STITCH-STYLE LIVE MAP — FINAL
+===================================================== */
+
+.map{
+    height:620px;
+    border-radius:16px;
+    position:relative;
+    overflow:hidden;
+    border:1px solid #e2e8f0;
+    background:#eef5fb;
+    box-shadow:0 2px 10px rgba(30,50,75,.06);
+}
+
+.stitch-map-svg{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:1;
+}
+
+.stitch-map-overlay{
+    position:absolute;
+    inset:0;
+    z-index:2;
+    pointer-events:none;
+}
+
+.stitch-node{
+    position:absolute;
+    z-index:8;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    cursor:pointer;
+    pointer-events:auto;
+    transition:opacity .2s ease, transform .2s ease;
+}
+
+.stitch-node.map-hidden,
+.stitch-popover.map-hidden{
+    opacity:0;
+    pointer-events:none;
+}
+
+.stitch-marker{
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 5px 14px rgba(25,45,70,.20);
+    border:3px solid rgba(255,255,255,.95);
+}
+
+.stitch-marker.small{
+    width:28px;
+    height:28px;
+}
+
+.stitch-marker.red{
+    background:#dc3545;
+    color:white;
+}
+
+.stitch-marker.green{
+    background:#18b874;
+    color:white;
+}
+
+.stitch-marker.blue{
+    background:#1461d2;
+    color:white;
+}
+
+.stitch-marker.orange{
+    background:#f59e0b;
+    color:white;
+}
+
+.stitch-marker.gray{
+    background:#e4ecf6;
+    color:#31527a;
+}
+
+.stitch-marker .material-symbols-outlined{
+    font-size:16px;
+}
+
+.stitch-pulse{
+    position:absolute;
+    width:48px;
+    height:48px;
+    border-radius:50%;
+    background:rgba(220,53,69,.17);
+    animation:stitchPulse 1.5s infinite;
+    z-index:-1;
+}
+
+@keyframes stitchPulse{
+    0%{transform:scale(.7);opacity:.8;}
+    75%,100%{transform:scale(1.35);opacity:0;}
+}
+
+.stitch-label{
+    margin-top:5px;
+    padding:6px 9px;
+    border-radius:8px;
+    background:rgba(255,255,255,.96);
+    box-shadow:0 4px 12px rgba(30,50,75,.12);
+    white-space:nowrap;
+    font-size:10px;
+    line-height:1.2;
+    color:#334155;
+    font-weight:600;
+}
+
+.stitch-label-row{
+    display:flex;
+    align-items:center;
+    gap:5px;
+}
+
+.stitch-status-dot{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    display:inline-block;
+}
+
+.stitch-map-weather{
+    position:absolute;
+    top:15px;
+    left:15px;
+    z-index:15;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 11px;
+    border-radius:10px;
+    background:rgba(255,255,255,.95);
+    box-shadow:0 4px 14px rgba(30,50,75,.10);
+    font-size:10px;
+}
+
+.stitch-map-weather .material-symbols-outlined{
+    color:#1769d3;
+    font-size:18px;
+}
+
+.stitch-popover{
+    position:absolute;
+    top:170px;
+    left:42%;
+    width:278px;
+    z-index:20;
+    pointer-events:auto;
+    background:rgba(255,255,255,.98);
+    border-radius:14px;
+    padding:14px;
+    border:1px solid #e5eaf2;
+    box-shadow:0 15px 35px rgba(23,47,79,.20);
+    transition:opacity .2s ease;
+}
+
+.stitch-popover-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:8px;
+}
+
+.stitch-popover-title{
+    font-size:15px;
+    font-weight:700;
+    color:#15243a;
+}
+
+.stitch-popover-sub{
+    font-size:10px;
+    color:#78859a;
+    margin-top:2px;
+}
+
+.stitch-chip{
+    font-size:8px;
+    font-weight:700;
+    padding:4px 7px;
+    border-radius:999px;
+    background:#ffe4e2;
+    color:#b12a28;
+    white-space:nowrap;
+}
+
+.stitch-metrics{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:7px;
+    padding:7px;
+    border-radius:8px;
+    background:#f1f5fb;
+    margin:10px 0;
+}
+
+.stitch-metric span{
+    display:block;
+    font-size:8px;
+    color:#7b8798;
+}
+
+.stitch-metric strong{
+    display:block;
+    margin-top:2px;
+    font-size:14px;
+    color:#1f2d40;
+}
+
+.stitch-metric strong.danger{
+    color:#d23333;
+}
+
+.stitch-ai-note{
+    display:flex;
+    gap:6px;
+    align-items:flex-start;
+    padding:8px;
+    border-radius:8px;
+    background:#edf5ff;
+    color:#536177;
+    font-size:9px;
+    line-height:1.4;
+}
+
+.stitch-popover button{
+    display:block;
+    margin:8px 0 0 auto;
+    border:0;
+    background:transparent;
+    color:#1555c7;
+    font-weight:700;
+    font-size:10px;
+}
+
+.stitch-zoom{
+    position:absolute;
+    right:14px;
+    bottom:14px;
+    z-index:15;
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+}
+
+.stitch-zoom button{
+    width:32px;
+    height:32px;
+    background:#fff;
+    border:1px solid #dbe3ed;
+    border-radius:8px;
+    color:#3a4b61;
+    box-shadow:0 3px 10px rgba(30,50,75,.10);
+}
+
+.stitch-scale{
+    position:absolute;
+    left:14px;
+    bottom:14px;
+    z-index:15;
+    padding:5px 8px;
+    border-radius:6px;
+    background:rgba(255,255,255,.90);
+    color:#728095;
+    font-size:8px;
+}
+
+.stitch-map-canvas{
+    position:absolute;
+    inset:0;
+    transform-origin:center center;
+    transition:transform .25s ease;
+}
+
+@media(max-width:1200px){
+    .stitch-popover{
+        left:38%;
+        width:255px;
+    }
+}
+
+@media(max-width:900px){
+    .map{height:660px;}
+    .stitch-popover{
+        top:235px;
+        left:25px;
+        right:25px;
+        width:auto;
+    }
+}
+
+
+/* =====================================================
+   CITY CONTEXT CARD
+===================================================== */
+
+.sidebar-bottom{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+}
+
+.city-card{
+    position:relative;
+    overflow:hidden;
+    min-height:118px;
+    padding:16px;
+    border-radius:16px;
+    background:
+        linear-gradient(160deg,#dbeafe 0%,#eef4ff 52%,#c7d9f6 100%);
+    border:1px solid #d6e1f0;
+    box-shadow:0 5px 18px rgba(32,54,86,.08);
+}
+
+.city-card::before{
+    content:"";
+    position:absolute;
+    left:-12px;
+    right:-12px;
+    bottom:-6px;
+    height:58px;
+    opacity:.32;
+    background:
+        linear-gradient(90deg,
+            transparent 0 8%,
+            #637aa0 8% 13%,
+            transparent 13% 17%,
+            #516b92 17% 23%,
+            transparent 23% 28%,
+            #7387a7 28% 34%,
+            transparent 34% 38%,
+            #435f8d 38% 46%,
+            transparent 46% 51%,
+            #6d82a3 51% 57%,
+            transparent 57% 61%,
+            #4f6f9b 61% 69%,
+            transparent 69% 74%,
+            #7186a6 74% 80%,
+            transparent 80%);
+    clip-path:polygon(
+        0 100%,0 55%,7% 55%,7% 25%,12% 25%,12% 62%,
+        17% 62%,17% 42%,23% 42%,23% 70%,29% 70%,29% 34%,
+        36% 34%,36% 72%,44% 72%,44% 18%,49% 18%,49% 67%,
+        56% 67%,56% 39%,63% 39%,63% 74%,71% 74%,71% 48%,
+        79% 48%,79% 70%,86% 70%,86% 32%,92% 32%,92% 60%,
+        100% 60%,100% 100%
+    );
+}
+
+.city-card-content{
+    position:relative;
+    z-index:2;
+}
+
+.city-kicker{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:7px;
+    color:#1555c7;
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+}
+
+.city-kicker .material-symbols-outlined{
+    font-size:16px;
+}
+
+.city-name{
+    font-size:20px;
+    line-height:1.1;
+    font-weight:800;
+    color:#102034;
+}
+
+.city-subtitle{
+    margin-top:5px;
+    max-width:150px;
+    color:#536176;
+    font-size:11px;
+    line-height:1.35;
+}
+
+.city-map-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    margin-top:9px;
+    padding:5px 8px;
+    border-radius:999px;
+    background:rgba(255,255,255,.75);
+    color:#31527a;
+    font-size:10px;
+    font-weight:700;
+    backdrop-filter:blur(6px);
+}
+
+</style>
+</head>
+
+<body>
+
+<aside class="sidebar">
+
+<div>
+
+<div class="logo">
+EventFlow
+</div>
+
+<div class="nav">
+
+<button
+class="nav-btn active"
+data-page="live-map">
+Live Map
+</button>
+
+<button
+class="nav-btn"
+data-page="sandbox">
+AI Sandbox
+</button>
+
+<button
+class="nav-btn"
+data-page="updates">
+Updates
+</button>
+
+<button
+class="nav-btn"
+data-page="reports">
+Reports
+</button>
+
+</div>
+
+</div>
+
+<div class="sidebar-bottom">
+
+<div class="city-card">
+    <div class="city-card-content">
+        <div class="city-kicker">
+            <span class="material-symbols-outlined">location_city</span>
+            Active City
+        </div>
+
+        <div class="city-name">
+            Mumbai
+        </div>
+
+        <div class="city-subtitle">
+            Marine Drive &amp; South Mumbai Event Precinct
+        </div>
+
+        <div class="city-map-pill">
+            <span class="material-symbols-outlined" style="font-size:14px;">map</span>
+            Live city map
+        </div>
+    </div>
+</div>
+
+<div class="user">
+
+<strong>
+Metro Command Org
+</strong>
+
+Lead Operations Officer
+
+</div>
+
+</div>
+
+</aside>
+
+
+<div class="main">
+
+<div class="topbar">
+
+<div class="live-pill">
+● Live Event Operations
+</div>
+
+<div class="context">
+Mumbai Mega Event • Heavy Rain Scenario
+</div>
+
+</div>
+
+
+<div class="content">
+
+<!-- ======================================================
+LIVE MAP
+====================================================== -->
+
+<section
+id="live-map"
+class="page active">
+
+<div class="page-head">
+
+<div>
+
+<h1>
+Live Event Map
+</h1>
+
+<p>
+Real-time event ecosystem monitoring and predictive crowd intelligence
+</p>
+
+</div>
+
+<span class="badge red">
+HIGH RISK
+</span>
+
+</div>
+
+
+<div class="grid-4">
+
+<div class="card">
+
+<div class="metric-label">
+Visitors
+</div>
+
+<div class="metric-value">
+80,000
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="metric-label">
+Venue Load
+</div>
+
+<div class="metric-value">
+61%
+</div>
+
+<span class="badge blue">
+Moderate
+</span>
+
+</div>
+
+<div class="card">
+
+<div class="metric-label">
+Transport Load
+</div>
+
+<div class="metric-value">
+68%
+</div>
+
+<span class="badge blue">
+Moderate
+</span>
+
+</div>
+
+<div class="card">
+
+<div class="metric-label">
+Overall Risk
+</div>
+
+<div class="metric-value"
+style="color:#bb2929">
+HIGH
+</div>
+
+</div>
+
+</div>
+
+
+<div class="map-wrap">
+
+<div class="card map-card">
+
+<div class="section-title">
+Live Event Ecosystem
+</div>
+
+<div class="map-filter-row">
+    <button class="map-filter active" data-filter="all">All</button>
+    <button class="map-filter" data-filter="venue">Venues</button>
+    <button class="map-filter" data-filter="transport">Transport</button>
+    <button class="map-filter" data-filter="attraction">Attractions</button>
+    <button class="map-filter" data-filter="emergency">Emergency</button>
+    <button class="map-filter" data-filter="hospitality">Hospitality &amp; Providers</button>
+</div>
+
+<div class="map">
+
+<div class="stitch-map-canvas" id="stitchMapCanvas">
+
+<svg class="stitch-map-svg" preserveAspectRatio="none" viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="arabianSea" x1="0%" x2="100%" y1="0%" y2="100%">
+            <stop offset="0%" stop-color="#c8edfb"/>
+            <stop offset="100%" stop-color="#8fd7ea"/>
+        </linearGradient>
+
+        <linearGradient id="landShade" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#f7fafc"/>
+            <stop offset="100%" stop-color="#eef3f7"/>
+        </linearGradient>
+
+        <pattern id="cityGrid2" width="38" height="38" patternUnits="userSpaceOnUse">
+            <path d="M 38 0 L 0 0 0 38" fill="none" stroke="#d9e2ea" stroke-width="0.8" opacity=".8"/>
+        </pattern>
+
+        <pattern id="blocks" width="90" height="70" patternUnits="userSpaceOnUse">
+            <rect x="8" y="8" width="28" height="18" rx="3" fill="#e9eef3"/>
+            <rect x="45" y="12" width="34" height="26" rx="3" fill="#e3e9ef"/>
+            <rect x="14" y="42" width="42" height="18" rx="3" fill="#edf1f4"/>
+            <rect x="62" y="45" width="20" height="14" rx="3" fill="#e1e8ed"/>
+        </pattern>
+
+        <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill="#14a767"/>
+        </marker>
+        <marker id="arrowYellow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill="#f1b71c"/>
+        </marker>
+        <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill="#e84c4c"/>
+        </marker>
+
+        <filter id="mapShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" flood-color="#334155" flood-opacity=".18" stdDeviation="2"/>
+        </filter>
+    </defs>
+
+    <!-- SEA -->
+    <path d="M0,0 L235,0 Q265,145 250,250 Q230,365 175,440 Q145,500 115,620 L0,620 Z"
+          fill="url(#arabianSea)"/>
+
+    <!-- LAND -->
+    <path d="M235,0 L900,0 L900,620 L115,620 Q145,500 175,440 Q230,365 250,250 Q265,145 235,0 Z"
+          fill="url(#landShade)"/>
+    <path d="M235,0 L900,0 L900,620 L115,620 Q145,500 175,440 Q230,365 250,250 Q265,145 235,0 Z"
+          fill="url(#cityGrid2)" opacity=".75"/>
+    <path d="M235,0 L900,0 L900,620 L115,620 Q145,500 175,440 Q230,365 250,250 Q265,145 235,0 Z"
+          fill="url(#blocks)" opacity=".72"/>
+
+    <!-- COAST / MARINE DRIVE -->
+    <path d="M235,0 Q265,145 250,250 Q230,365 175,440 Q145,500 115,620"
+          fill="none" stroke="#f8fafc" stroke-width="10"/>
+    <path d="M235,0 Q265,145 250,250 Q230,365 175,440 Q145,500 115,620"
+          fill="none" stroke="#9aa9ba" stroke-width="2"/>
+
+    <!-- CITY ROADS -->
+    <path d="M340,0 L315,620" fill="none" stroke="#c9d3de" stroke-width="7"/>
+    <path d="M470,0 L440,620" fill="none" stroke="#d4dde6" stroke-width="6"/>
+    <path d="M610,0 L570,620" fill="none" stroke="#d8e0e8" stroke-width="5"/>
+    <path d="M230,135 L870,135" fill="none" stroke="#d7dfe7" stroke-width="6"/>
+    <path d="M205,265 L880,265" fill="none" stroke="#d4dde6" stroke-width="7"/>
+    <path d="M185,390 L850,390" fill="none" stroke="#d8e0e8" stroke-width="6"/>
+    <path d="M150,510 L820,510" fill="none" stroke="#d7dfe7" stroke-width="5"/>
+
+    <!-- RAIL -->
+    <path d="M430,0 L395,345" fill="none" stroke="#8ea0b3" stroke-width="2.5" stroke-dasharray="7 5"/>
+
+    <!-- PARK / OPEN AREA -->
+    <rect x="575" y="115" width="125" height="110" rx="20" fill="#dff3df" opacity=".9"/>
+    <circle cx="635" cy="165" r="30" fill="#c6e9c6"/>
+    <circle cx="680" cy="195" r="20" fill="#b8e0b8"/>
+
+    <!-- LANDMARK STADIUM -->
+    <ellipse cx="500" cy="300" rx="68" ry="49" fill="#cbd5df" filter="url(#mapShadow)"/>
+    <ellipse cx="500" cy="300" rx="53" ry="38" fill="#9db5c3"/>
+    <ellipse cx="500" cy="300" rx="39" ry="28" fill="#6ab475"/>
+    <ellipse cx="500" cy="300" rx="25" ry="17" fill="#8cc98c"/>
+
+    <!-- ROUTES: RED / YELLOW / GREEN like Stitch screenshot -->
+    <path d="M410,18 L400,78 L398,138 L395,198 L390,255 L380,310"
+          fill="none" stroke="#e84c4c" stroke-width="5" marker-end="url(#arrowRed)"/>
+    <path d="M380,310 L430,325 L480,340 L525,352"
+          fill="none" stroke="#e84c4c" stroke-width="5" marker-end="url(#arrowRed)"/>
+
+    <path d="M190,375 L280,315 L355,270 L430,230 L520,200"
+          fill="none" stroke="#f1b71c" stroke-width="5" marker-end="url(#arrowYellow)"/>
+    <path d="M520,200 L600,215 L690,245 L770,270"
+          fill="none" stroke="#f1b71c" stroke-width="5" marker-end="url(#arrowYellow)"/>
+
+    <path d="M180,350 L150,420 L205,455 L300,455 L365,420"
+          fill="none" stroke="#14a767" stroke-width="5" marker-end="url(#arrowGreen)"/>
+    <path d="M365,420 L520,425 L605,385 L630,300"
+          fill="none" stroke="#14a767" stroke-width="5" marker-end="url(#arrowGreen)"/>
+    <path d="M630,300 L700,220 L735,145 L720,75"
+          fill="none" stroke="#14a767" stroke-width="5" marker-end="url(#arrowGreen)"/>
+
+    <!-- DASHED AI DISPLACEMENT PATHS FROM ORIGINAL STITCH CODE -->
+    <path d="M290,160 Q320,240 370,300"
+          fill="none" stroke="#ba1a1a" stroke-width="3" stroke-dasharray="5 5" opacity=".7">
+        <animate attributeName="stroke-dashoffset" from="20" to="0" dur="1.2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M370,300 Q420,310 500,280"
+          fill="none" stroke="#d97706" stroke-width="3" stroke-dasharray="5 5" opacity=".7">
+        <animate attributeName="stroke-dashoffset" from="20" to="0" dur="1.2s" repeatCount="indefinite"/>
+    </path>
+
+    <!-- ROAD LABELS -->
+    <text x="235" y="330" transform="rotate(-59 235 330)" fill="#59677a" font-size="12" font-family="Inter">Marine Drive</text>
+    <text x="520" y="245" fill="#59677a" font-size="11" font-family="Inter">Maharshi Karve Rd</text>
+    <text x="325" y="450" fill="#59677a" font-size="11" font-family="Inter">Dr Annie Besant Rd</text>
+    <text x="52" y="305" fill="#5f8ca0" font-size="20" font-family="Inter" opacity=".75">Arabian Sea</text>
+</svg>
+
+<div class="stitch-map-overlay">
+
+    <div class="stitch-map-weather">
+        <span class="material-symbols-outlined">water_drop</span>
+        <div>
+            <strong style="display:block;color:#435168;">Sector 4 Rainfall: 42mm/h</strong>
+            <span style="color:#c63838;font-weight:700;">Flash pooling in open zones</span>
+        </div>
+    </div>
+
+    <!-- VENUE -->
+    <div class="stitch-node map-item" data-category="venue" style="left:53%;top:39%;">
+        <div class="stitch-marker red">
+            <span class="material-symbols-outlined">stadium</span>
+        </div>
+        <div class="stitch-label">
+            <div class="stitch-label-row">
+                <span class="stitch-status-dot" style="background:#ef4444"></span>
+                Wankhede Stadium
+            </div>
+            <div style="color:#d63333;margin-top:2px;">82% Capacity</div>
+        </div>
+    </div>
+
+    <!-- TRANSIT A -->
+    <div class="stitch-node map-item" data-category="transport" style="left:41%;top:23%;">
+        <div class="stitch-marker blue">
+            <span class="material-symbols-outlined">train</span>
+        </div>
+        <div class="stitch-label">
+            <div class="stitch-label-row">
+                Churchgate Station
+            </div>
+            <div style="color:#d63333;margin-top:2px;">● High (78%)</div>
+        </div>
+    </div>
+
+    <!-- ATTRACTION B -->
+    <div class="stitch-node map-item" data-category="attraction" style="left:30%;top:14%;">
+        <div class="stitch-pulse"></div>
+        <div class="stitch-marker red small">
+            <span class="material-symbols-outlined">attractions</span>
+        </div>
+        <div class="stitch-label">
+            <div class="stitch-label-row">Attraction B</div>
+            <div style="color:#d63333;margin-top:2px;">Critical</div>
+        </div>
+    </div>
+
+    <!-- ATTRACTION C / AZAD MAIDAN -->
+    <div class="stitch-node map-item" data-category="attraction" style="left:66%;top:20%;">
+        <div class="stitch-marker green small">
+            <span class="material-symbols-outlined">park</span>
+        </div>
+        <div class="stitch-label">
+            <div>Attraction C</div>
+            <div style="color:#14915c;margin-top:2px;">Low 34%</div>
+        </div>
+    </div>
+
+    <!-- HOSPITALITY -->
+    <div class="stitch-node map-item" data-category="hospitality" style="left:50%;top:57%;">
+        <div class="stitch-marker blue small">
+            <span class="material-symbols-outlined">hotel</span>
+        </div>
+        <div class="stitch-label">
+            <div>Taj Hotel</div>
+            <div style="color:#d63333;margin-top:2px;">● 70%</div>
+        </div>
+    </div>
+
+    <!-- TRANSIT B -->
+    <div class="stitch-node map-item" data-category="transport" style="left:17%;top:75%;">
+        <div class="stitch-marker blue small">
+            <span class="material-symbols-outlined">directions_bus</span>
+        </div>
+        <div class="stitch-label">Colaba (15 min)</div>
+    </div>
+
+    <!-- NARIMAN / HOSPITALITY SAFE -->
+    <div class="stitch-node map-item" data-category="hospitality" style="left:16%;top:58%;">
+        <div class="stitch-marker green small">
+            <span class="material-symbols-outlined">location_city</span>
+        </div>
+        <div class="stitch-label">
+            <div>Nariman Point</div>
+            <div style="color:#14915c;margin-top:2px;">Moderate</div>
+        </div>
+    </div>
+
+    <!-- EMERGENCY -->
+    <div class="stitch-node map-item" data-category="emergency" style="left:72%;top:60%;">
+        <div class="stitch-marker green small">
+            <span class="material-symbols-outlined">shield_with_heart</span>
+        </div>
+        <div class="stitch-label">
+            <div>EMS Post 2</div>
+            <div style="color:#14915c;margin-top:2px;">Ready</div>
+        </div>
+    </div>
+
+    <!-- TRANSIT FOCUS MARKER -->
+    <div class="stitch-node map-item" data-category="transport" style="left:42%;top:43%;">
+        <div class="stitch-pulse"></div>
+        <div class="stitch-marker red">
+            <span class="material-symbols-outlined">directions_subway</span>
+        </div>
+    </div>
+
+    <!-- TRANSIT A POPOVER -->
+    <div class="stitch-popover map-item" data-category="transport">
+        <div class="stitch-popover-head">
+            <div>
+                <div class="stitch-popover-title">Transit A</div>
+                <div class="stitch-popover-sub">Churchgate Central Hub</div>
+            </div>
+            <span class="stitch-chip">Critical in 42m</span>
+        </div>
+
+        <div class="stitch-metrics">
+            <div class="stitch-metric">
+                <span>Current Load</span>
+                <strong>68%</strong>
+            </div>
+            <div class="stitch-metric">
+                <span>Predicted</span>
+                <strong class="danger">91%</strong>
+            </div>
+            <div class="stitch-metric">
+                <span>Incoming Surge</span>
+                <strong class="danger">+4,200</strong>
+            </div>
+            <div class="stitch-metric">
+                <span>Throughput</span>
+                <strong style="font-size:11px;">Constrained</strong>
+            </div>
+        </div>
+
+        <div class="stitch-ai-note">
+            <span class="material-symbols-outlined" style="font-size:15px;color:#1555c7;">auto_awesome</span>
+            <span>Heavy rain is redirecting ~12k visitors from Attraction B directly through this transit hub.</span>
+        </div>
+
+        <button type="button" onclick="openSandbox()">View Details →</button>
+    </div>
+
+</div>
+
+</div>
+
+<div class="stitch-zoom">
+    <button type="button" onclick="zoomStitchMap(1)">+</button>
+    <button type="button" onclick="zoomStitchMap(-1)">−</button>
+    <button type="button" onclick="resetStitchMap()">⌖</button>
+</div>
+
+<div class="stitch-scale">Marine Drive Precinct • 1:5,000</div>
+
+</div>
+
+</div>
+
+
+<div>
+
+<div class="card alert-card">
+
+<div class="alert-title">
+AI Prediction
+</div>
+
+<div class="alert-text">
+
+Overcrowding predicted in
+<strong>42 minutes</strong>.
+
+<br><br>
+
+Heavy rain is expected to reduce Attraction B capacity and displace approximately
+
+<strong>12,000 visitors.</strong>
+
+<br><br>
+
+Venue A:
+
+<strong style="color:#b3261e">
+61% → 94%
+</strong>
+
+<br><br>
+
+Transit A:
+
+<strong style="color:#b3261e">
+68% → 91%
+</strong>
+
+<br><br>
+
+Primary cause:
+<strong>
+weather-driven visitor redistribution.
+</strong>
+
+</div>
+
+<br>
+
+<button
+class="btn btn-primary btn-full"
+onclick="openSandbox()">
+
+View AI Response
+
+</button>
+
+</div>
+
+
+<br>
+
+
+<div class="card">
+
+<div class="section-title">
+Areas to Watch
+</div>
+
+<p>
+<strong>
+Venue A
+</strong>
+— incoming visitor pressure rising
+</p>
+
+<p>
+<strong>
+Transit A
+</strong>
+— predicted bottleneck
+</p>
+
+<p>
+<strong>
+Emergency Pressure
+</strong>
+— elevated
+</p>
+
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================================================
+AI SANDBOX
+====================================================== -->
+
+<section
+id="sandbox"
+class="page">
+
+<div class="page-head">
+
+<div>
+
+<h1>
+AI Sandbox
+</h1>
+
+<p>
+Test responses before taking action
+</p>
+
+</div>
+
+<span class="badge green">
+Simulation Ready
+</span>
+
+</div>
+
+
+<div class="card scenario">
+
+<div class="section-title">
+Active Disruption
+</div>
+
+<h2>
+Heavy Rain Affecting Attraction B
+</h2>
+
+<p>
+Capacity expected to fall from
+<strong>
+74% → 20%
+</strong>,
+displacing approximately
+<strong>
+12,000 visitors
+</strong>.
+</p>
+
+<span class="badge red">
+HIGH RISK
+</span>
+
+<span class="badge gray">
+42 min to overcrowding
+</span>
+
+</div>
+
+
+<br>
+
+
+<div class="card">
+
+<div class="section-title">
+Without Intervention
+</div>
+
+<div class="compare">
+
+<div class="compare-box">
+
+<div class="metric-label">
+Venue A
+</div>
+
+<div>
+61%
+→
+<strong style="color:#c52a2a">
+94%
+</strong>
+</div>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Transit A
+</div>
+
+<div>
+68%
+→
+<strong style="color:#c52a2a">
+91%
+</strong>
+</div>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Emergency Pressure
+</div>
+
+<div>
+35%
+→
+<strong style="color:#c52a2a">
+HIGH
+</strong>
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="section-title">
+AI Response Strategies
+</div>
+
+
+<div class="grid-3">
+
+<div
+class="card strategy"
+id="strategyA">
+
+<h3>
+Strategy A
+</h3>
+
+<h3>
+Redirect Visitors
+</h3>
+
+<p>
+Redirect visitors from Attraction B toward Attraction C.
+</p>
+
+<ul>
+
+<li>
+18% crowd reduction
+</li>
+
+<li>
+Low cost
+</li>
+
+<li>
+Easy implementation
+</li>
+
+<li>
+Low risk
+</li>
+
+</ul>
+
+<button
+class="btn btn-secondary"
+onclick="simulate('A')">
+
+Simulate Strategy
+
+</button>
+
+</div>
+
+
+<div
+class="card strategy"
+id="strategyB">
+
+<h3>
+Strategy B
+</h3>
+
+<h3>
+Redirect + Add Shuttles
+</h3>
+
+<p>
+Redirect visitors and increase shuttle capacity.
+</p>
+
+<ul>
+
+<li>
+31% crowd reduction
+</li>
+
+<li>
+Medium cost
+</li>
+
+<li>
+Moderate implementation
+</li>
+
+<li>
+Low risk
+</li>
+
+</ul>
+
+<button
+class="btn btn-secondary"
+onclick="simulate('B')">
+
+Simulate Strategy
+
+</button>
+
+</div>
+
+
+<div
+class="card strategy"
+id="strategyC">
+
+<div class="recommended">
+AI RECOMMENDED
+</div>
+
+<h3>
+Strategy C
+</h3>
+
+<h3>
+Coordinated Redistribution
+</h3>
+
+<p>
+Combined visitor redirection, transport redistribution and venue routing.
+</p>
+
+<ul>
+
+<li>
+47% crowd reduction
+</li>
+
+<li>
+Medium cost
+</li>
+
+<li>
+Moderate implementation
+</li>
+
+<li>
+Very low risk
+</li>
+
+</ul>
+
+<button
+class="btn btn-primary"
+onclick="simulate('C')">
+
+Simulate Strategy
+
+</button>
+
+</div>
+
+</div>
+
+
+<div
+class="result card"
+id="simulationResult">
+
+<div class="section-title">
+Simulation Result
+</div>
+
+<h2 id="simulationTitle">
+Strategy C
+</h2>
+
+<div class="result-grid">
+
+<div class="compare-box">
+
+<div class="metric-label">
+Venue A
+</div>
+
+<span class="old">
+94%
+</span>
+
+→
+
+<span class="new">
+69%
+</span>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Transit A
+</div>
+
+<span class="old">
+91%
+</span>
+
+→
+
+<span class="new">
+64%
+</span>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Attraction C
+</div>
+
+<span class="old">
+38%
+</span>
+
+→
+
+<span class="new">
+72%
+</span>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Emergency Pressure
+</div>
+
+<span class="old">
+HIGH
+</span>
+
+→
+
+<span class="new">
+MEDIUM
+</span>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="grid-3">
+
+<div class="compare-box">
+
+<div class="metric-label">
+Crowd Reduction
+</div>
+
+<div class="metric-value">
+47%
+</div>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Residual Risk
+</div>
+
+<div class="metric-value"
+style="color:#08764d">
+LOW
+</div>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Constraint Validation
+</div>
+
+<div class="metric-value"
+style="font-size:22px;color:#08764d">
+PASSED
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<div class="approval">
+
+<div>
+
+<strong>
+Human Approval Required
+</strong>
+
+<br>
+
+<small>
+No operational changes will be made until you approve this response.
+</small>
+
+</div>
+
+<div>
+
+<button
+class="btn btn-secondary"
+onclick="showPage('live-map')">
+
+Back to Live Map
+
+</button>
+
+<button
+class="btn btn-success"
+onclick="approveResponse()">
+
+Approve Response
+
+</button>
+
+</div>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================================================
+UPDATES
+====================================================== -->
+
+<section
+id="updates"
+class="page">
+
+<div class="page-head">
+
+<div>
+
+<h1>
+Response Updates
+</h1>
+
+<p>
+Track how your approved response is being coordinated across operational networks
+</p>
+
+</div>
+
+<span class="badge green">
+Response Active
+</span>
+
+</div>
+
+
+<div class="success-banner">
+
+<h2>
+Response Approved: Strategy C — Coordinated Redistribution
+</h2>
+
+<p>
+The approved response is now being coordinated across the event ecosystem.
+</p>
+
+<div class="grid-3">
+
+<div>
+
+<strong style="font-size:25px">
+47%
+</strong>
+
+<br>
+
+Crowd Reduction
+
+</div>
+
+<div>
+
+<strong style="font-size:25px;color:#08764d">
+LOW
+</strong>
+
+<br>
+
+Residual Risk
+
+</div>
+
+<div>
+
+<strong style="font-size:25px">
+3/3
+</strong>
+
+<br>
+
+Stakeholders Updated
+
+</div>
+
+</div>
+
+</div>
+
+
+<div class="section-title">
+Multi-Stakeholder Coordination Flow
+</div>
+
+
+<div class="grid-3">
+
+<div class="card stakeholder">
+
+<div class="icon-circle">
+
+<span class="material-symbols-outlined">
+directions_bus
+</span>
+
+</div>
+
+<h3>
+Transportation
+</h3>
+
+<span class="badge green">
+Update Sent
+</span>
+
+<div class="directive">
+Increase shuttle capacity toward Attraction C
+</div>
+
+<ul>
+
+<li>
+Redistribute flow away from Transit A
+</li>
+
+<li>
+Recommend alternate route to Venue A
+</li>
+
+<li>
+Stage additional shuttle capacity
+</li>
+
+</ul>
+
+<div class="compare-box">
+
+Transit A:
+
+<strong>
+91% → 64%
+</strong>
+
+<br>
+
+<span class="badge green">
+Pressure Reduced
+</span>
+
+</div>
+
+</div>
+
+
+<div class="card stakeholder">
+
+<div class="icon-circle">
+
+<span class="material-symbols-outlined">
+storefront
+</span>
+
+</div>
+
+<h3>
+Hospitality & Providers
+</h3>
+
+<span class="badge green">
+Update Sent
+</span>
+
+<div class="directive">
+Prepare for increased visitor demand in Zone C
+</div>
+
+<ul>
+
+<li>
+Expected visitor demand +18%
+</li>
+
+<li>
+Open covered seating areas
+</li>
+
+<li>
+Prepare concessions and shelter capacity
+</li>
+
+</ul>
+
+<div class="compare-box">
+
+<strong>
+3,200 Seats Open
+</strong>
+
+<br>
+
+<span class="badge green">
+Capacity Available
+</span>
+
+</div>
+
+</div>
+
+
+<div class="card stakeholder">
+
+<div class="icon-circle">
+
+<span class="material-symbols-outlined">
+smartphone
+</span>
+
+</div>
+
+<h3>
+Travelers
+</h3>
+
+<span class="badge green">
+Recommendations Live
+</span>
+
+<br><br>
+
+<div class="phone">
+
+<div class="phone-screen" id="travelerScreen">
+
+<strong style="color:#b3261e">
+⚠ Attraction B affected by rain
+</strong>
+
+<p>
+Recommended Alternative:
+</p>
+
+<strong>
+Indoor Pavilion C
+</strong>
+
+<p>
+Crowd:
+<strong style="color:#08764d">
+LOW
+</strong>
+</p>
+
+<p>
+Travel:
+<strong>
+14 min
+</strong>
+</p>
+
+<button
+class="btn btn-primary btn-full"
+onclick="getDirections()">
+Get Directions
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="card">
+
+<div class="section-title">
+Coordination Status
+</div>
+
+<div class="grid-3">
+
+<div>
+✅ Transportation update sent
+</div>
+
+<div>
+✅ Hospitality update sent
+</div>
+
+<div>
+✅ Traveler recommendations live
+</div>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="card">
+
+<div class="section-title">
+Expected Impact
+</div>
+
+<div class="compare">
+
+<div class="compare-box">
+
+Venue A
+
+<br>
+
+<strong>
+94% → 69%
+</strong>
+
+</div>
+
+<div class="compare-box">
+
+Transit A
+
+<br>
+
+<strong>
+91% → 64%
+</strong>
+
+</div>
+
+<div class="compare-box">
+
+Emergency Pressure
+
+<br>
+
+<strong>
+HIGH → MEDIUM
+</strong>
+
+</div>
+
+</div>
+
+<br>
+
+<button
+class="btn btn-primary"
+onclick="showPage('live-map')">
+
+Return to Live Map
+
+</button>
+
+<button
+class="btn btn-secondary"
+onclick="showPage('sandbox')">
+
+View Sandbox
+
+</button>
+
+</div>
+
+</section>
+
+
+
+<!-- ======================================================
+REPORTS
+====================================================== -->
+
+<section
+id="reports"
+class="page">
+
+<div class="page-head">
+
+<div>
+
+<h1>
+Reports
+</h1>
+
+<p>
+Review event incidents, simulations and approved responses
+</p>
+
+</div>
+
+<span class="badge gray">
+Audit Mode
+</span>
+
+</div>
+
+
+<div class="grid-3">
+
+<div class="card">
+
+<div class="metric-label">
+Incidents Detected
+</div>
+
+<div class="metric-value">
+3
+</div>
+
+<span class="badge red">
+1 Active
+</span>
+
+</div>
+
+
+<div class="card">
+
+<div class="metric-label">
+Strategies Simulated
+</div>
+
+<div class="metric-value">
+7
+</div>
+
+<span class="badge blue">
+Verified
+</span>
+
+</div>
+
+
+<div class="card">
+
+<div class="metric-label">
+Responses Approved
+</div>
+
+<div class="metric-value">
+2
+</div>
+
+<span class="badge green">
+Human Approved
+</span>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="report-layout">
+
+<div>
+
+<div class="section-title">
+Recent Event Activity
+</div>
+
+
+<div class="report-item selected">
+
+<strong>
+8:42 PM
+</strong>
+
+<span class="badge red">
+Weather Disruption
+</span>
+
+<h3>
+Heavy Rain — Attraction B
+</h3>
+
+<p>
+12,000 visitors potentially displaced.
+</p>
+
+<p>
+Venue A:
+61% → 94%
+</p>
+
+<p>
+Transit A:
+68% → 91%
+</p>
+
+<span class="badge green">
+Response Approved
+</span>
+
+</div>
+
+
+<div class="report-item">
+
+<strong>
+7:15 PM
+</strong>
+
+<h3>
+Increased Arrival Rate — Transit B
+</h3>
+
+<p>
+Unexpected passenger surge resolved.
+</p>
+
+<span class="badge gray">
+Resolved
+</span>
+
+</div>
+
+
+<div class="report-item">
+
+<strong>
+6:30 PM
+</strong>
+
+<h3>
+Venue Entry Surge
+</h3>
+
+<p>
+Pre-event simulation exercise.
+</p>
+
+<span class="badge blue">
+Simulation Completed
+</span>
+
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div style="display:flex;justify-content:space-between">
+
+<div>
+
+<h2>
+Heavy Rain — Attraction B
+</h2>
+
+<span class="badge green">
+Approved & Coordinated
+</span>
+
+</div>
+
+<strong>
+8:42 PM – 8:46 PM
+</strong>
+
+</div>
+
+
+<br>
+
+
+<div class="section-title">
+Incident Audit Timeline
+</div>
+
+
+<div class="timeline">
+
+<div class="timeline-item">
+
+<strong>
+8:42 PM — Disruption Detected
+</strong>
+
+<p>
+Heavy rain reduced Attraction B capacity 74% → 20%.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:43 PM — Prediction Generated
+</strong>
+
+<p>
+Overcrowding predicted within 42 minutes.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:44 PM — Strategy Synthesis
+</strong>
+
+<p>
+Strategies A, B and C generated.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:45 PM — Simulation
+</strong>
+
+<p>
+Strategy C evaluated.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:45 PM — Validation Passed
+</strong>
+
+<p>
+Operational constraints verified.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:46 PM — Organizer Authorized
+</strong>
+
+<p>
+Lead Operations Officer approved Strategy C.
+</p>
+
+</div>
+
+<div class="timeline-item">
+
+<strong>
+8:46 PM — Updates Dispatched
+</strong>
+
+<p>
+Transportation, providers and travelers notified.
+</p>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<div class="section-title">
+Decision Summary
+</div>
+
+
+<div class="grid-3">
+
+<div class="compare-box">
+
+<div class="metric-label">
+Selected Strategy
+</div>
+
+<strong>
+Strategy C
+</strong>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Crowd Reduction
+</div>
+
+<strong>
+47%
+</strong>
+
+</div>
+
+<div class="compare-box">
+
+<div class="metric-label">
+Residual Risk
+</div>
+
+<strong style="color:#08764d">
+LOW
+</strong>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<button
+class="btn btn-primary"
+onclick="downloadReport()">
+
+Download Report
+
+</button>
+
+<button
+class="btn btn-secondary"
+onclick="showPage('sandbox')">
+
+View Sandbox
+
+</button>
+
+</div>
+
+</div>
+
+</section>
+
+</div>
+
+</div>
+
+
+<div
+class="toast"
+id="toast">
+
+<strong id="toastTitle">
+Done
+</strong>
+
+<div
+id="toastMessage"
+style="font-size:13px;color:#657084;margin-top:5px">
+</div>
+
+</div>
+
+
+<script>
+
+let eventState = {
+    strategy:null,
+    simulated:false,
+    approved:false
+};
+
+
+function showPage(page){
+
+    document
+    .querySelectorAll(".page")
+    .forEach(p => p.classList.remove("active"));
+
+
+    document
+    .getElementById(page)
+    .classList.add("active");
+
+
+    document
+    .querySelectorAll(".nav-btn")
+    .forEach(btn => {
+
+        btn.classList.toggle(
+            "active",
+            btn.dataset.page === page
+        );
+
+    });
+
+
+    window.scrollTo({
+        top:0,
+        behavior:"smooth"
+    });
+
+}
+
+
+document
+.querySelectorAll(".nav-btn")
+.forEach(btn => {
+
+    btn.addEventListener(
+        "click",
+        () => showPage(btn.dataset.page)
+    );
+
+});
+
+
+function openSandbox(){
+
+    showPage("sandbox");
+
+}
+
+
+function simulate(strategy){
+
+    eventState.strategy = strategy;
+
+    eventState.simulated = true;
+
+
+    document
+    .querySelectorAll(".strategy")
+    .forEach(card =>
+        card.classList.remove("selected")
+    );
+
+
+    document
+    .getElementById(
+        "strategy" + strategy
+    )
+    .classList.add("selected");
+
+
+    const result =
+    document.getElementById(
+        "simulationResult"
+    );
+
+
+    result.classList.add("show");
+
+
+    const title =
+    document.getElementById(
+        "simulationTitle"
+    );
+
+
+    if(strategy === "A"){
+
+        title.textContent =
+        "Strategy A Simulation Result";
+
+        showToast(
+            "Strategy A simulated",
+            "Estimated crowd reduction: 18%."
+        );
+
+    }
+
+
+    if(strategy === "B"){
+
+        title.textContent =
+        "Strategy B Simulation Result";
+
+        showToast(
+            "Strategy B simulated",
+            "Estimated crowd reduction: 31%."
+        );
+
+    }
+
+
+    if(strategy === "C"){
+
+        title.textContent =
+        "Strategy C Simulation Result";
+
+        showToast(
+            "Strategy C simulated",
+            "47% crowd reduction with LOW residual risk."
+        );
+
+    }
+
+}
+
+
+function approveResponse(){
+
+    if(!eventState.simulated){
+
+        simulate("C");
+
+    }
+
+
+    eventState.strategy = "C";
+
+    eventState.approved = true;
+
+
+    showToast(
+        "Response approved",
+        "Dispatching updates across the event ecosystem."
+    );
+
+
+    setTimeout(() => {
+
+        showPage("updates");
+
+    },1000);
+
+}
+
+
+function showToast(title,message){
+
+    const toast =
+    document.getElementById("toast");
+
+    document
+    .getElementById(
+        "toastTitle"
+    )
+    .textContent = title;
+
+
+    document
+    .getElementById(
+        "toastMessage"
+    )
+    .textContent = message;
+
+
+    toast.classList.add("show");
+
+
+    setTimeout(() => {
+
+        toast.classList.remove("show");
+
+    },3000);
+
+}
+
+
+
+// =====================================
+// LIVE MAP FILTERS
+// =====================================
+
+document.querySelectorAll(".map-filter").forEach(button => {
+    button.addEventListener("click", () => {
+        const filter = button.dataset.filter;
+
+        document.querySelectorAll(".map-filter").forEach(btn => {
+            btn.classList.remove("active");
+        });
+
+        button.classList.add("active");
+
+        document.querySelectorAll(".map-item").forEach(item => {
+            const category = item.dataset.category;
+            const show = filter === "all" || category === filter;
+
+            item.classList.toggle("map-hidden", !show);
+        });
+    });
+});
+
+
+
+// =====================================
+// TRAVELER DIRECTIONS
+// =====================================
+
+function getDirections(){
+
+    const screen =
+    document.getElementById("travelerScreen");
+
+    if(!screen) return;
+
+    screen.innerHTML = `
+        <div style="
+            display:flex;
+            align-items:center;
+            gap:8px;
+            color:#08764d;
+            font-weight:700;
+            margin-bottom:14px;
+        ">
+            <span class="material-symbols-outlined">
+                check_circle
+            </span>
+            Route Updated
+        </div>
+
+        <div style="
+            font-size:12px;
+            color:#657084;
+            margin-bottom:5px;
+        ">
+            Recommended Destination
+        </div>
+
+        <strong style="
+            font-size:18px;
+            color:#102034;
+        ">
+            Attraction C — Indoor Pavilion
+        </strong>
+
+        <div style="
+            margin-top:15px;
+            padding:12px;
+            border-radius:10px;
+            background:#f0f5fc;
+        ">
+
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                margin-bottom:10px;
+            ">
+                <span>Travel Time</span>
+                <strong>14 min</strong>
+            </div>
+
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                margin-bottom:10px;
+            ">
+                <span>Crowd Level</span>
+                <strong style="color:#08764d;">
+                    LOW
+                </strong>
+            </div>
+
+            <div style="
+                display:flex;
+                justify-content:space-between;
+            ">
+                <span>Route</span>
+                <strong>South Terminal</strong>
+            </div>
+
+        </div>
+
+        <div style="
+            margin-top:12px;
+            padding:10px;
+            border-radius:8px;
+            background:#eaf2ff;
+            color:#536176;
+            font-size:12px;
+            line-height:1.5;
+        ">
+            ✓ Avoiding Transit A congestion<br>
+            ✓ Sheltered route recommended<br>
+            ✓ Attraction B closure bypassed
+        </div>
+
+        <button
+            class="btn btn-secondary btn-full"
+            style="margin-top:12px;"
+            onclick="resetDirections()">
+            Back
+        </button>
+    `;
+
+    showToast(
+        "Route updated",
+        "Traveler redirected safely to Attraction C."
+    );
+}
+
+
+function resetDirections(){
+
+    const screen =
+    document.getElementById("travelerScreen");
+
+    if(!screen) return;
+
+    screen.innerHTML = `
+        <strong style="color:#b3261e">
+            ⚠ Attraction B affected by rain
+        </strong>
+
+        <p>
+            Recommended Alternative:
+        </p>
+
+        <strong>
+            Indoor Pavilion C
+        </strong>
+
+        <p>
+            Crowd:
+            <strong style="color:#08764d">
+                LOW
+            </strong>
+        </p>
+
+        <p>
+            Travel:
+            <strong>
+                14 min
+            </strong>
+        </p>
+
+        <button
+            class="btn btn-primary btn-full"
+            onclick="getDirections()">
+            Get Directions
+        </button>
+    `;
+}
+
+
+
+// =====================================
+// STITCH MAP ZOOM
+// =====================================
+
+let stitchMapZoom = 1;
+
+function zoomStitchMap(direction){
+    stitchMapZoom += direction * 0.08;
+    stitchMapZoom = Math.max(1, Math.min(1.32, stitchMapZoom));
+
+    const canvas = document.getElementById("stitchMapCanvas");
+    if(canvas){
+        canvas.style.transform = `scale(${stitchMapZoom})`;
+    }
+}
+
+function resetStitchMap(){
+    stitchMapZoom = 1;
+
+    const canvas = document.getElementById("stitchMapCanvas");
+    if(canvas){
+        canvas.style.transform = "scale(1)";
+    }
+}
+
+function downloadReport(){
+
+const report = `
+
+EVENTFLOW
+MEGA-EVENT INCIDENT RESPONSE REPORT
+
+Event:
+Mumbai Mega Event
+
+Incident:
+Heavy Rain — Attraction B
+
+Visitors Displaced:
+12,000
+
+Predicted Overcrowding:
+42 minutes
+
+
+WITHOUT INTERVENTION
+
+Venue A:
+61% → 94%
+
+Transit A:
+68% → 91%
+
+Emergency Pressure:
+35% → HIGH
+
+
+SELECTED RESPONSE
+
+Strategy C —
+Coordinated Redistribution
+
+
+SIMULATION RESULT
+
+Venue A:
+94% → 69%
+
+Transit A:
+91% → 64%
+
+Attraction C:
+38% → 72%
+
+Emergency Pressure:
+HIGH → MEDIUM
+
+Crowd Reduction:
+47%
+
+Residual Risk:
+LOW
+
+Constraint Validation:
+PASSED
+
+
+ORGANIZER DECISION
+
+APPROVED
+
+
+STAKEHOLDER UPDATES
+
+Transportation:
+SENT
+
+Hospitality & Providers:
+SENT
+
+Travelers:
+LIVE
+
+
+EVENTFLOW PIPELINE
+
+Predict
+→ Alert
+→ Optimize
+→ Sandbox
+→ Human Approval
+→ Orchestrate
+→ Notify
+
+`;
+
+
+const blob =
+new Blob(
+    [report],
+    {
+        type:"text/plain"
+    }
+);
+
+
+const url =
+URL.createObjectURL(blob);
+
+
+const a =
+document.createElement("a");
+
+
+a.href = url;
+
+a.download =
+"EventFlow-Incident-Report.txt";
+
+
+a.click();
+
+
+URL.revokeObjectURL(url);
+
+
+showToast(
+    "Report downloaded",
+    "Incident report exported successfully."
+);
+
+}
+
+</script>
+
+</body>
+</html>
