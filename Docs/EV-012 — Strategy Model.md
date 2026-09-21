@@ -1,6 +1,7 @@
 **Priority:** MUST
 **Status:** MVP Specification
 **Version:** 1.0
+Owner: P2 — AI / Strategy Intelligence
 
 ## 1. Purpose
 
