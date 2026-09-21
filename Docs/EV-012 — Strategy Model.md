@@ -5,7 +5,6 @@
 ## 1. Purpose
 
 This document defines the structure, behavior, parameters, constraints, and lifecycle of a **mitigation strategy** in EventFlow.
-
 A mitigation strategy represents a structured operational action or combination of actions intended to reduce an identified event risk, crowding condition, bottleneck, or operational problem.
 
 The Strategy Model provides a common structure that can be understood by:
