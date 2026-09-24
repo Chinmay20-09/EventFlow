@@ -218,6 +218,16 @@ export interface ScenarioInput {
   stepSeconds?: number
 }
 
+export interface ScenarioComparison {
+  baselineScenarioId: string
+  results: SimulationResult[]
+  impact: Array<{
+    scenarioId: string
+    arrivedPopulationDelta: number
+    estimatedDelaySecondsDelta: number
+  }>
+}
+
 export interface OptimizationChange {
   scope: "NODE" | "EDGE"
   targetId: string
@@ -276,5 +286,5 @@ export interface OptimizationResult {
 }
 
 export interface StrategySolver {
-  generate(input: OptimizationInput): OptimizationCandidate[]
+  solve(input: OptimizationInput): OptimizationCandidate[]
 }

@@ -1,6 +1,6 @@
 import { DeterministicSimulator } from "./simulation"
 import { VenueGraph } from "./graph"
-import type { CrowdGroupInput, Intervention, SandboxInput, ScenarioInput, SimulationResult } from "./types"
+import type { CrowdGroupInput, Intervention, SandboxInput, ScenarioComparison, ScenarioInput, SimulationResult } from "./types"
 
 export function runSandbox(input: SandboxInput): SimulationResult {
   const scenario = input.scenario
@@ -35,7 +35,7 @@ export function runSandbox(input: SandboxInput): SimulationResult {
     ...activeDisruptions.flatMap((disruption) => disruption.affectedEdges ?? []),
   ])].sort(compareIds)
   const enriched = { ...result, affectedNodes, affectedEdges }
-  if (!scenario) return result
+  if (!scenario) return enriched
   return {
     ...enriched,
     scenarioId: scenario.id,
@@ -49,6 +49,21 @@ export function runSandbox(input: SandboxInput): SimulationResult {
 
 export function runBaseline(input: Omit<SandboxInput, "disruptions" | "graphOverrides">): SimulationResult {
   return runSandbox(input)
+}
+
+export function compareScenarios(inputs: SandboxInput[]): ScenarioComparison {
+  if (inputs.length === 0) throw new Error("At least one scenario is required")
+  const results = inputs.slice().sort((a, b) => compareIds(a.scenario?.id ?? "", b.scenario?.id ?? "")).map(runSandbox)
+  const baseline = results[0]
+  return {
+    baselineScenarioId: baseline.scenarioId ?? "BASELINE",
+    results,
+    impact: results.map((result) => ({
+      scenarioId: result.scenarioId ?? "BASELINE",
+      arrivedPopulationDelta: result.arrivedPopulation - baseline.arrivedPopulation,
+      estimatedDelaySecondsDelta: result.estimatedDelaySeconds - baseline.estimatedDelaySeconds,
+    })),
+  }
 }
 
 function toGraphOverride(intervention: Intervention) {

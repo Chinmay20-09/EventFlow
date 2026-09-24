@@ -3,10 +3,13 @@ import {
   DeterministicSimulator,
   VenueGraph,
   capacityMetric,
+  compareScenarios,
   findPath,
   generateCandidates,
   optimizeSimulation,
   runSandbox,
+  serializeGraph,
+  serializeSimulationResult,
 } from "../src/engine"
 
 const graphInput = {
@@ -33,8 +36,14 @@ describe("EventFlow deterministic engine", () => {
   it("builds serializable graphs and selects directed paths", () => {
     const graph = new VenueGraph(graphInput)
     expect(findPath(graph, "A", "C")?.edgeIds).toEqual(["AB", "BC"])
+    expect(graph.edge("AB")?.label).toBe("Entry -> Concourse")
     expect(JSON.parse(JSON.stringify(graph)).nodes).toHaveLength(3)
     expect(() => new VenueGraph({ ...graphInput, edges: [{ ...graphInput.edges[0], from: "missing" }] })).toThrow()
+    expect(() => new VenueGraph({ ...graphInput, activeEntries: ["C"] })).toThrow()
+    expect(() => new VenueGraph({
+      ...graphInput,
+      edges: [...graphInput.edges, { ...graphInput.edges[0], id: "AB_DUP" }],
+    })).toThrow()
   })
 
   it("calculates capacity metrics without conflating null capacity", () => {
@@ -160,6 +169,21 @@ describe("EventFlow deterministic engine", () => {
     ]).node("C")?.status).toBe("CLOSED")
   })
 
+  it("applies increased travel time to actual edge progress", () => {
+    const slowed = new VenueGraph(graphInput).withOverrides([], [
+      { id: "TIME", type: "INCREASED_TRAVEL_TIME", affectedEdges: ["AB"], travelTime: 40, status: "ACTIVE" },
+    ])
+    const normal = new DeterministicSimulator(new VenueGraph(graphInput), crowd, {
+      durationSeconds: 20,
+      timestepSeconds: 10,
+    }).run()
+    const delayed = new DeterministicSimulator(slowed, crowd, {
+      durationSeconds: 20,
+      timestepSeconds: 10,
+    }).run()
+    expect(delayed.final.crowd[0].progress).not.toBe(normal.final.crowd[0].progress)
+  })
+
   it("distinguishes overflow and zero-capacity edge cases", () => {
     const node = capacityMetric({ ...graphInput.nodes[1], capacity: 50 }, 60, 0, 0, 0)
     expect(node.overflow).toBe(10)
@@ -201,7 +225,7 @@ describe("EventFlow deterministic engine", () => {
       parameters: { durationSeconds: 20, timestepSeconds: 10 },
       maxCandidates: 1,
     }, undefined, {
-      generate: () => [{
+      solve: () => [{
         id: "INVALID",
         changes: [{ scope: "EDGE", targetId: "missing", parameter: "capacity", previousValue: null, proposedValue: 1 }],
         feasible: true,
@@ -233,6 +257,27 @@ describe("EventFlow deterministic engine", () => {
     expect(graphInput.edges[0].capacity).toBe(60)
   })
 
+  it("compares sandbox scenarios in deterministic scenario-id order", () => {
+    const baseline = {
+      graph: graphInput,
+      crowd,
+      parameters: { durationSeconds: 20, timestepSeconds: 10 },
+      scenario: {
+        id: "SCENARIO_A", name: "baseline", baseline: "CURRENT_GRAPH" as const,
+        startTime: "2026-09-24T00:00:00Z", duration: 20,
+      },
+    }
+    const blocked = {
+      ...baseline,
+      scenario: { ...baseline.scenario, id: "SCENARIO_B", name: "blocked" },
+      disruptions: [{ id: "D", type: "BLOCKED_CORRIDOR" as const, affectedEdges: ["AB"], status: "ACTIVE" as const }],
+    }
+    const comparison = compareScenarios([blocked, baseline])
+    expect(comparison.baselineScenarioId).toBe("SCENARIO_A")
+    expect(comparison.results.map((result) => result.scenarioId)).toEqual(["SCENARIO_A", "SCENARIO_B"])
+    expect(comparison.impact[1].arrivedPopulationDelta).toBeLessThanOrEqual(0)
+  })
+
   it("handles zero crowd and preserves physical versus operational capacity", () => {
     const graph = new VenueGraph(graphInput).withOverrides([
       { scope: "EDGE", targetId: "AB", capacity: 10 },
@@ -243,5 +288,15 @@ describe("EventFlow deterministic engine", () => {
     expect(result.final.edgeMetrics[0].operationalCapacity).toBe(10)
     expect(result.final.edgeMetrics[0].currentOccupancy).toBe(0)
     expect(result.final.edgeMetrics[0].flow).toBe(0)
+  })
+
+  it("uses an explicit snake_case serialization boundary for P3 payloads", () => {
+    const result = runSandbox({ graph: graphInput, crowd, parameters: { durationSeconds: 0, timestepSeconds: 10 } })
+    const graph = serializeGraph(graphInput)
+    const payload = serializeSimulationResult(result)
+    expect((graph.nodes[1] as Record<string, unknown>).throughput_capacity).toBe(60)
+    expect(payload).toHaveProperty("arrived_population")
+    expect(payload).toHaveProperty("timeline")
+    expect(payload).not.toHaveProperty("arrivedPopulation")
   })
 })

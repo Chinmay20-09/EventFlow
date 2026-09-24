@@ -18,7 +18,7 @@ export const DEFAULT_OPTIMIZATION_WEIGHTS: OptimizationWeights = {
 }
 
 export class DeterministicFallbackSolver implements StrategySolver {
-  generate(input: OptimizationInput): OptimizationCandidate[] {
+  solve(input: OptimizationInput): OptimizationCandidate[] {
     return generateCandidates(input)
   }
 }
@@ -76,7 +76,7 @@ export function optimizeSimulation(
   solver: StrategySolver = new DeterministicFallbackSolver(),
 ): OptimizationResult {
   validateWeights(weights)
-  const candidates = solver.generate(input)
+  const candidates = solver.solve(input)
   const evaluations = candidates.map((candidate) => evaluateCandidate(candidate, input, weights))
   const feasible = evaluations.filter((evaluation) => evaluation.feasible && evaluation.simulation !== null)
   const rejected = evaluations.filter((evaluation) => !evaluation.feasible || evaluation.simulation === null)

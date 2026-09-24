@@ -349,7 +349,10 @@ export class DeterministicSimulator {
     const nodeOccupancy = occupancy.get(node?.id ?? "") ?? 0
     const load = capacity === null || capacity === 0 ? 0 : nodeOccupancy / capacity
     const reduction = this.parameters.speedSlowdownCoefficient * Math.max(0, load - this.parameters.slowdownStartUtilization)
-    return group.averageSpeed * clamp(1 - reduction, this.parameters.minSpeedFactor, 1)
+    const configuredTimeFactor = edge.currentTime === undefined || edge.currentTime <= 0 || edge.baselineTime <= 0
+      ? 1
+      : Math.min(1, edge.baselineTime / edge.currentTime)
+    return group.averageSpeed * configuredTimeFactor * clamp(1 - reduction, this.parameters.minSpeedFactor, 1)
   }
 
   private occupancyForInitialState(): Map<string, number> {
