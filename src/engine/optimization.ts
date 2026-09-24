@@ -29,7 +29,7 @@ export class DeterministicFallbackSolver implements StrategySolver {
  * separately in optimizeSimulation.
  */
 export function generateCandidates(input: OptimizationInput): OptimizationCandidate[] {
-  const locked = new Set(input.disruptionLocked ?? [])
+  const locked = new Set([...(input.disruptionLocked ?? []), ...(input.operatorLocked ?? []), ...(input.excludedEntities ?? [])])
   const changes: OptimizationCandidate["changes"] = []
   if (input.allowNodeCapacityChange) {
     for (const node of input.graph.nodes.slice().sort((a, b) => compareIds(a.id, b.id))) {
@@ -120,8 +120,14 @@ function evaluateCandidate(candidate: OptimizationCandidate, input: Optimization
 function validateCandidate(candidate: OptimizationCandidate, input: OptimizationInput): string[] {
   const reasons: string[] = []
   const locked = new Set(input.disruptionLocked ?? [])
+  const operatorLocked = new Set(input.operatorLocked ?? [])
+  const excluded = new Set(input.excludedEntities ?? [])
+  const statusChanges = candidate.changes.filter((change) => change.parameter === "status").length
+  if (input.maxStatusChanges !== undefined && statusChanges > input.maxStatusChanges) reasons.push("CHANGE_BUDGET_EXCEEDED")
   for (const change of candidate.changes) {
     if (locked.has(change.targetId)) reasons.push("DISRUPTION_LOCKED")
+    if (operatorLocked.has(change.targetId)) reasons.push("OPERATOR_LOCKED")
+    if (excluded.has(change.targetId)) reasons.push("EXCLUDED_ENTITY")
     const entity = change.scope === "NODE"
       ? input.graph.nodes.find((node) => node.id === change.targetId)
       : input.graph.edges.find((edge) => edge.id === change.targetId)
@@ -136,6 +142,10 @@ function validateCandidate(candidate: OptimizationCandidate, input: Optimization
       ? input.graph.nodes.find((node) => node.id === change.targetId)?.throughputCapacity
       : entity.operationalCapacity ?? entity.capacity
     if (typeof current === "number" && value > current) reasons.push("CAPACITY_OUT_OF_BOUNDS")
+    const minimum = change.parameter === "throughput_capacity"
+      ? input.minimumThroughput?.[change.targetId]
+      : input.minimumCapacity?.[change.targetId]
+    if (minimum !== undefined && value < minimum) reasons.push("CAPACITY_OUT_OF_BOUNDS")
   }
   if (reasons.length > 0) return [...new Set(reasons)].sort(compareIds)
   const candidateGraph = new VenueGraph(input.graph).withOverrides(candidate.changes.map((change) => ({

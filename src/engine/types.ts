@@ -85,6 +85,20 @@ export type DisruptionType =
   | "EMERGENCY_EXIT_UNAVAILABLE"
   | string
 
+export type OperationalEffectParameter = "status" | "capacity" | "throughput_capacity" | "restriction"
+export type OperationalEffectStatus = "PROPOSED" | "APPLIED" | "REJECTED" | "SUPERSEDED"
+
+export interface OperationalEffect {
+  targetType: "NODE" | "EDGE" | "EVENT"
+  targetId: string | null
+  parameter: OperationalEffectParameter
+  previousValue: string | number | null
+  proposedValue: string | number
+  appliedValue?: string | number | null
+  appliedAt?: string | null
+  effectStatus: OperationalEffectStatus
+}
+
 export interface Disruption {
   id: string
   type: DisruptionType
@@ -98,7 +112,11 @@ export interface Disruption {
   restriction?: string
   startTime?: string
   expectedDuration?: number
+  detectedAt?: string
+  effectStartedAt?: string
+  resolvedAt?: string
   source?: "LIVE" | "SIMULATION"
+  operationalEffects?: OperationalEffect[]
 }
 
 export interface SimulationParameters {
@@ -110,6 +128,11 @@ export interface SimulationParameters {
   slowdownStartUtilization?: number
   minSpeedFactor?: number
   maxUpdateInterval?: number
+  simulatedStartTime?: string
+  densityMediumThreshold?: number
+  densityHighThreshold?: number
+  densityCriticalThreshold?: number
+  queueWarningIntervals?: number
 }
 
 export interface CapacityMetric {
@@ -128,6 +151,8 @@ export interface CapacityMetric {
   serviceUtilization: number | null
   flowUtilization: number | null
   overloaded: boolean | null
+  density: number | null
+  densityState: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "UNKNOWN"
 }
 
 export interface EdgeMetric extends CapacityMetric {
@@ -141,8 +166,70 @@ export interface SimulationStep {
   crowd: CrowdGroupResult[]
 }
 
+export type SimulationStatus = "COMPLETED" | "TERMINATED" | "INVALID_INPUT" | "INVALID_SCENARIO" | "INVALID_OVERRIDE" | "SIMULATION_FAILURE" | "TIMEOUT"
+export type MetricName = "population" | "occupancy" | "flow" | "density" | "queue_size" | "waiting_time" | "travel_time" | "arrived_population" | "diverted_population" | "congestion" | "capacity_utilization" | "throughput" | "intervention_impact" | "time_to_congestion" | "peak_congestion" | "peak_queue" | "recovery_time" | "duration"
+export interface ScopedMetric {
+  metric: MetricName
+  targetType: "NODE" | "EDGE" | "GROUP" | "EVENT"
+  targetId: string | null
+  aggregation: "PEAK" | "FINAL" | "MEAN" | "SUM" | "FIRST" | "DELTA"
+  value: number | null
+  unit: "people" | "people/minute" | "metres" | "metres/second" | "seconds" | "dimensionless"
+}
+export interface SimulationEvent {
+  simTime: string
+  type: string
+  targetType: "NODE" | "EDGE" | "GROUP" | "EVENT" | null
+  targetId: string | null
+  detail: Record<string, unknown>
+}
+export interface SimulationWarning {
+  code: string
+  message: string
+}
+export interface SimulationMetrics {
+  population: number
+  occupancy: number
+  flow: number
+  density: number
+  queueSize: number
+  waitingTime: number
+  travelTime: number
+  arrivedPopulation: number
+  divertedPopulation: number
+  congestion: number
+  capacityUtilization: number
+  throughput: number
+  interventionImpact: number | null
+  timeToCongestion: number | null
+  peakCongestion: number
+  peakQueue: number
+  recoveryTime: number | null
+  duration: number
+}
+export interface SimulationFinalState {
+  population: number
+  overloadedNodes: string[]
+  overloadedEdges: string[]
+  activeScenarioDisruptions: string[]
+  affectedEntityStatus: Record<string, NodeStatus>
+}
+
 export interface SimulationResult {
-  status: "COMPLETED" | "TERMINATED" | "INVALID_INPUT" | "INVALID_SCENARIO" | "INVALID_OVERRIDE" | "SIMULATION_FAILURE"
+  id: string
+  scenarioId: string
+  strategyId: string | null
+  status: SimulationStatus
+  baseline: Baseline
+  baselineRef: string | null
+  seed: number
+  simulatedStartTime: string
+  simulatedEndTime: string
+  metrics: SimulationMetrics
+  scopedMetrics: ScopedMetric[]
+  finalState: SimulationFinalState
+  events: SimulationEvent[]
+  warnings: SimulationWarning[]
   durationSeconds: number
   steps: SimulationStep[]
   final: SimulationStep
@@ -156,11 +243,6 @@ export interface SimulationResult {
   arrivedPopulation: number
   strandedPopulation: number
   diagnostics: string[]
-  scenarioId?: string
-  baseline?: Baseline
-  baselineRef?: string | null
-  seed?: number
-  warnings?: string[]
   timeline?: SimulationStep[]
 }
 
@@ -212,10 +294,20 @@ export interface ScenarioInput {
   graphOverrides?: GraphOverride[]
   crowdOverrides?: CrowdOverride[]
   disruptionOverrides?: Disruption[]
+  operationalParameters?: OperationalParameterOverride[]
   interventions?: Intervention[]
   startTime: string
   duration: number
   stepSeconds?: number
+  strategyId?: string | null
+}
+
+export interface OperationalParameterOverride {
+  key: OperationalEffectParameter
+  scope: "NODE" | "EDGE" | "EVENT"
+  targetId: string | null
+  value: string | number
+  unit?: "people" | "people/minute" | "seconds" | "dimensionless"
 }
 
 export interface ScenarioComparison {
@@ -245,6 +337,9 @@ export interface OptimizationInput {
   minimumCapacity?: Record<string, number>
   minimumThroughput?: Record<string, number>
   disruptionLocked?: string[]
+  operatorLocked?: string[]
+  excludedEntities?: string[]
+  maxStatusChanges?: number
 }
 
 export interface OptimizationCandidate {

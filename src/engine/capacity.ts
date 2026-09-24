@@ -19,6 +19,7 @@ export function capacityMetric(
   queueSize = 0,
   flow = 0,
   intervalSeconds = 60,
+  densityThresholds = { medium: 0.5, high: 0.8, critical: 1 },
 ): CapacityMetric {
   const operationalCapacity = item.operationalCapacity ?? item.capacity
   const isNode = "throughputCapacity" in item
@@ -51,7 +52,20 @@ export function capacityMetric(
     serviceUtilization,
     flowUtilization,
     overloaded: measuredOverload,
+    density: isNode ? holdingUtilization : flowUtilization,
+    densityState: densityState(isNode ? holdingUtilization : flowUtilization, densityThresholds),
   }
+}
+
+function densityState(
+  density: number | null,
+  thresholds: { medium: number; high: number; critical: number },
+): CapacityMetric["densityState"] {
+  if (density === null) return "UNKNOWN"
+  if (density >= thresholds.critical) return "CRITICAL"
+  if (density >= thresholds.high) return "HIGH"
+  if (density >= thresholds.medium) return "MEDIUM"
+  return "LOW"
 }
 
 export function flowUtilization(flow: number, capacity: number | null): number | null {

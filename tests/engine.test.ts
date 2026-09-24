@@ -48,7 +48,7 @@ describe("EventFlow deterministic engine", () => {
 
   it("calculates capacity metrics without conflating null capacity", () => {
     expect(capacityMetric(graphInput.nodes[1], 50, 10, 5, 12)).toMatchObject({
-      physicalCapacity: 50, operationalCapacity: 50, currentOccupancy: 50, queueSize: 12, overflow: 0, bottleneck: true,
+      physicalCapacity: 50, operationalCapacity: 50, currentOccupancy: 50, queueSize: 12, overflow: 0, bottleneck: true, density: 1, densityState: "CRITICAL",
     })
     expect(capacityMetric({ ...graphInput.nodes[1], capacity: null }, 999, 0, 0).utilization).toBeNull()
   })
@@ -57,7 +57,7 @@ describe("EventFlow deterministic engine", () => {
     const baseline = new DeterministicSimulator(new VenueGraph(graphInput), crowd, { durationSeconds: 40, timestepSeconds: 10 }).run()
     const blocked = runSandbox({
       graph: graphInput, crowd, parameters: { durationSeconds: 40, timestepSeconds: 10 },
-      disruptions: [{ id: "D1", type: "BLOCKED_CORRIDOR", affectedEdges: ["AB"], status: "ACTIVE" }],
+      disruptions: [{ id: "D1", type: "BLOCKED_CORRIDOR", affectedEdges: ["AB"], status: "ACTIVE", startTime: "2026-09-24T00:00:00Z" }],
     })
     expect(baseline.arrivedPopulation).toBeGreaterThan(0)
     expect(blocked.arrivedPopulation).toBe(0)
@@ -108,6 +108,25 @@ describe("EventFlow deterministic engine", () => {
     }], { durationSeconds: 5, timestepSeconds: 1 }).run()
     expect(result.final.nodeMetrics.find((metric) => metric.id === "B")?.queueSize).toBe(20)
     expect(result.strandedPopulation).toBe(20)
+  })
+
+  it("releases queued people when node service becomes available", () => {
+    const graph = new VenueGraph({
+      nodes: [
+        { id: "A", label: "A", type: "ZONE", capacity: 100, status: "OPEN" },
+        { id: "B", label: "B", type: "CHECKPOINT", capacity: 100, throughputCapacity: 60, status: "OPEN" },
+        { id: "C", label: "C", type: "EXIT", capacity: 100, status: "OPEN" },
+      ],
+      edges: [
+        { id: "BC", from: "B", to: "C", distance: 1, baselineTime: 1, currentTime: 1, capacity: 1200, status: "OPEN" },
+      ],
+    })
+    const result = new DeterministicSimulator(graph, [{
+      id: "release", population: 20, currentLocation: { kind: "NODE", id: "B" }, destination: "C", averageSpeed: 1,
+    }], { durationSeconds: 5, timestepSeconds: 1 }).run()
+    const queues = result.steps.map((step) => step.nodeMetrics.find((metric) => metric.id === "B")?.queueSize ?? 0)
+    expect(queues[0]).toBe(20)
+    expect(queues[queues.length - 1]).toBeLessThan(queues[0])
   })
 
   it("uses explicit deterministic tie-breaking and supports flexible rerouting", () => {
@@ -169,6 +188,39 @@ describe("EventFlow deterministic engine", () => {
     ]).node("C")?.status).toBe("CLOSED")
   })
 
+  it("applies validated EV-008 operational effects only in the scenario graph", () => {
+    const effect = {
+      targetType: "EDGE" as const,
+      targetId: "AB",
+      parameter: "capacity" as const,
+      previousValue: 60,
+      proposedValue: 15,
+      appliedValue: 15,
+      effectStatus: "APPLIED" as const,
+    }
+    const result = runSandbox({
+      graph: graphInput,
+      crowd,
+      disruptions: [{
+        id: "EFFECT_01", type: "BLOCKED_CORRIDOR", affectedEdges: ["AB"],
+        status: "ACTIVE", startTime: "2026-09-24T00:00:00Z",
+        operationalEffects: [effect],
+      }],
+      parameters: { durationSeconds: 0, timestepSeconds: 10 },
+    })
+    expect(result.final.edgeMetrics.find((metric) => metric.id === "AB")?.operationalCapacity).toBe(15)
+    expect(graphInput.edges[0].capacity).toBe(60)
+    expect(() => runSandbox({
+      graph: graphInput,
+      crowd,
+      disruptions: [{
+        id: "EFFECT_BAD", type: "BLOCKED_CORRIDOR", affectedEdges: ["AB"],
+        status: "ACTIVE", startTime: "2026-09-24T00:00:00Z",
+        operationalEffects: [{ ...effect, targetType: "EVENT", targetId: "AB" }],
+      }],
+    })).toThrow()
+  })
+
   it("applies increased travel time to actual edge progress", () => {
     const slowed = new VenueGraph(graphInput).withOverrides([], [
       { id: "TIME", type: "INCREASED_TRAVEL_TIME", affectedEdges: ["AB"], travelTime: 40, status: "ACTIVE" },
@@ -182,6 +234,14 @@ describe("EventFlow deterministic engine", () => {
       timestepSeconds: 10,
     }).run()
     expect(delayed.final.crowd[0].progress).not.toBe(normal.final.crowd[0].progress)
+  })
+
+  it("conserves population across active state and exit arrivals", () => {
+    const result = new DeterministicSimulator(new VenueGraph(graphInput), crowd, {
+      durationSeconds: 40,
+      timestepSeconds: 10,
+    }).run()
+    expect(result.finalState.population + result.arrivedPopulation).toBe(20)
   })
 
   it("distinguishes overflow and zero-capacity edge cases", () => {
@@ -234,6 +294,22 @@ describe("EventFlow deterministic engine", () => {
     })
     expect(invalid.status).toBe("NO_FEASIBLE_CANDIDATES")
     expect(invalid.rejected[0].rejectionReasons).toContain("UNKNOWN_ENTITY")
+    const constrained = optimizeSimulation({
+      graph: graphInput,
+      crowd,
+      minimumCapacity: { AB: 50 },
+      excludedEntities: ["AB"],
+      maxStatusChanges: 0,
+    }, undefined, {
+      solve: () => [{
+        id: "CONSTRAINED",
+        changes: [{ scope: "EDGE", targetId: "AB", parameter: "capacity", previousValue: 60, proposedValue: 10 }],
+        feasible: true,
+        rejectionReasons: [],
+      }],
+    })
+    expect(constrained.rejected[0].rejectionReasons).toContain("EXCLUDED_ENTITY")
+    expect(constrained.rejected[0].rejectionReasons).toContain("CAPACITY_OUT_OF_BOUNDS")
   })
 
   it("applies scenario metadata, crowd overrides, and interventions in an isolated run", () => {
@@ -270,7 +346,7 @@ describe("EventFlow deterministic engine", () => {
     const blocked = {
       ...baseline,
       scenario: { ...baseline.scenario, id: "SCENARIO_B", name: "blocked" },
-      disruptions: [{ id: "D", type: "BLOCKED_CORRIDOR" as const, affectedEdges: ["AB"], status: "ACTIVE" as const }],
+      disruptions: [{ id: "D", type: "BLOCKED_CORRIDOR" as const, affectedEdges: ["AB"], status: "ACTIVE" as const, startTime: "2026-09-24T00:00:00Z" }],
     }
     const comparison = compareScenarios([blocked, baseline])
     expect(comparison.baselineScenarioId).toBe("SCENARIO_A")
@@ -297,6 +373,100 @@ describe("EventFlow deterministic engine", () => {
     expect((graph.nodes[1] as Record<string, unknown>).throughput_capacity).toBe(60)
     expect(payload).toHaveProperty("arrived_population")
     expect(payload).toHaveProperty("timeline")
+    expect(payload).toHaveProperty("timeline.0.node_metrics.0.density_state")
     expect(payload).not.toHaveProperty("arrivedPopulation")
+  })
+
+  it("returns the complete deterministic EV-011 identity, clock, metrics and state contract", () => {
+    const result = runSandbox({
+      graph: graphInput, crowd, scenario: {
+        id: "SCENARIO_CONTRACT", name: "contract", baseline: "CURRENT_GRAPH",
+        startTime: "2026-09-24T00:00:00Z", duration: 20, stepSeconds: 10,
+      },
+    })
+    expect(result.id).toBe("SIMULATION_RESULT_SCENARIO_CONTRACT")
+    expect(result.strategyId).toBeNull()
+    expect(result.simulatedStartTime).toBe("2026-09-24T00:00:00.000Z")
+    expect(result.simulatedEndTime).toBe("2026-09-24T00:00:20.000Z")
+    expect(result.metrics.duration).toBe(20)
+    expect(result.scopedMetrics.some((metric) => metric.metric === "population")).toBe(true)
+    expect(result.finalState.population).toBe(20)
+    expect(Array.isArray(result.events)).toBe(true)
+    expect(result.warnings.every((warning) => typeof warning.code === "string")).toBe(true)
+  })
+
+  it("emits queue-stalled and overload transitions from real state", () => {
+    const graph = new VenueGraph({
+      nodes: [
+        { id: "A", label: "A", type: "ENTRANCE", capacity: 100, status: "OPEN" },
+        { id: "B", label: "B", type: "CHECKPOINT", capacity: 5, throughputCapacity: 0, status: "OPEN" },
+        { id: "C", label: "C", type: "EXIT", capacity: 100, status: "OPEN" },
+      ],
+      edges: [
+        { id: "AB", from: "A", to: "B", distance: 1, baselineTime: 1, currentTime: 1, capacity: 1200, status: "OPEN" },
+        { id: "BC", from: "B", to: "C", distance: 1, baselineTime: 1, currentTime: 1, capacity: 1200, status: "OPEN" },
+      ],
+    })
+
+    const result = new DeterministicSimulator(graph, [{
+      id: "queue-event", population: 20, currentLocation: { kind: "NODE", id: "B" }, destination: "C", averageSpeed: 1,
+    }], { durationSeconds: 5, timestepSeconds: 1 }).run()
+    expect(result.events.some((event) => event.type === "QUEUE_STALLED")).toBe(true)
+    expect(result.warnings.some((warning) => warning.code === "QUEUE_STALLED")).toBe(true)
+    expect(result.finalState.population).toBe(20)
+  })
+
+  it("emits density transitions and explicit exit sink releases", () => {
+    const result = new DeterministicSimulator(new VenueGraph(graphInput), crowd, {
+      durationSeconds: 40,
+      timestepSeconds: 10,
+      densityHighThreshold: 0.5,
+      densityCriticalThreshold: 0.9,
+    }).run()
+    expect(result.events.some((event) => event.type === "HIGH_DENSITY")).toBe(true)
+    expect(result.events.some((event) => event.type === "SINK_RELEASE")).toBe(true)
+  })
+
+  it("requires configured consecutive queue growth intervals before warning", () => {
+    const graph = new VenueGraph({
+      nodes: [
+        { id: "A", label: "A", type: "ZONE", capacity: 100, status: "OPEN" },
+        { id: "B", label: "B", type: "CHECKPOINT", capacity: 100, throughputCapacity: 0, status: "OPEN" },
+        { id: "C", label: "C", type: "EXIT", capacity: 100, status: "OPEN" },
+      ],
+      edges: [
+        { id: "AB", from: "A", to: "B", distance: 1, baselineTime: 1, currentTime: 1, capacity: 1200, status: "OPEN" },
+        { id: "BC", from: "B", to: "C", distance: 1, baselineTime: 1, currentTime: 1, capacity: 1200, status: "OPEN" },
+      ],
+    })
+    const result = new DeterministicSimulator(graph, [
+      { id: "queue-growth-a", population: 10, currentLocation: { kind: "NODE", id: "A" }, destination: "C", averageSpeed: 1 },
+      { id: "queue-growth-b", population: 10, currentLocation: { kind: "NODE", id: "B" }, destination: "C", averageSpeed: 1 },
+    ], { durationSeconds: 5, timestepSeconds: 1, queueWarningIntervals: 1 }).run()
+    expect(result.warnings.some((warning) => warning.code === "QUEUE_INCREASING")).toBe(true)
+  })
+
+  it("activates and resolves scheduled disruptions on the simulated clock", () => {
+    const result = runSandbox({
+      graph: graphInput, crowd, scenario: {
+        id: "SCENARIO_SCHEDULED", name: "scheduled", baseline: "CURRENT_GRAPH",
+        startTime: "2026-09-24T00:00:00Z", duration: 30, stepSeconds: 10,
+        disruptionOverrides: [{
+          id: "SCHEDULED", type: "BLOCKED_CORRIDOR", affectedEdges: ["AB"],
+          status: "DETECTED", startTime: "2026-09-24T00:00:10Z", expectedDuration: 10, source: "SIMULATION",
+        }],
+      },
+    })
+    expect(result.events.map((event) => event.type)).toContain("DISRUPTION_ACTIVATED")
+    expect(result.events.map((event) => event.type)).toContain("DISRUPTION_RESOLVED")
+    expect(result.events.find((event) => event.type === "DISRUPTION_ACTIVATED")?.simTime).toBe("2026-09-24T00:00:10.000Z")
+  })
+
+  it("rejects invalid scenarios before execution", () => {
+    expect(() => runSandbox({
+      graph: graphInput, crowd, scenario: {
+        id: "BAD", name: "", baseline: "CURRENT_GRAPH", startTime: "not-a-time", duration: -1,
+      },
+    })).toThrow()
   })
 })

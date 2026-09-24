@@ -165,6 +165,20 @@ export class VenueGraph {
             if (edge) edge.currentTime = disruption.travelTime ?? edge.currentTime! * (disruption.travelTimeMultiplier ?? 1)
           })
         }
+        for (const effect of disruption.operationalEffects ?? []) {
+          if (effect.effectStatus !== "APPLIED") continue
+          if (effect.targetType === "EVENT" || effect.targetId === null) continue
+          const target = effect.targetType === "NODE" ? nodeMap.get(effect.targetId) : edgeMap.get(effect.targetId)
+          if (!target) throw new Error(`Unknown disruption effect target: ${effect.targetId}`)
+          if (effect.parameter === "status") target.status = effect.proposedValue as "OPEN" | "CLOSED"
+          if (effect.parameter === "capacity") target.operationalCapacity = Number(effect.proposedValue)
+          if (effect.parameter === "throughput_capacity" && "throughputCapacity" in target) {
+            target.throughputCapacity = Number(effect.proposedValue)
+          }
+          if (effect.parameter === "restriction") {
+            target.restrictions = [...new Set([...(target.restrictions ?? []), String(effect.proposedValue)])]
+          }
+        }
       })
     for (const id of [...nodeMap.keys(), ...edgeMap.keys()]) {
       if (!id) throw new Error("Invalid graph override target")

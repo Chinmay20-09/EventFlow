@@ -38,12 +38,12 @@ A feedback loop from Simulation back into Optimization is intentional: candidate
 
 ```
 Docs/                     Domain specifications (the architecture)
-  Graph_model.md           EV-006  Graph Model
-  Crowd_model.md           EV-007  Crowd Model
+  EV-006Graph_model.md     EV-006  Graph Model
+  EV-007_Crowd_Model.md    EV-007  Crowd Model
   Disruption_model.md      EV-008  Disruption Model
   Prediction.md            EV-009  Prediction
-  Optimization.md          EV-010  Optimization
-  Simulation.md            EV-011  Simulation
+  EV-010_Optimization.md   EV-010  Optimization
+  EV-011_Simulation.md      EV-011  Simulation
 UI/
   index.html               Self-contained static prototype (Command Center)
   app.js                   Shared demo state for the multi-page UI version
@@ -89,12 +89,12 @@ The `Docs/` folder holds the architecture. These six specifications are written 
 
 | Document | What it defines |
 | --- | --- |
-| [`Graph_model.md`](Docs/Graph_model.md) | Nodes, directed edges, capacity, traversal and operational state |
-| [`Crowd_model.md`](Docs/Crowd_model.md) | Crowd groups, movement, accumulation, utilization, density and overload |
+| [`EV-006Graph_model.md`](Docs/EV-006Graph_model.md) | Nodes, directed edges, capacity, traversal and operational state |
+| [`EV-007_Crowd_Model.md`](Docs/EV-007_Crowd_Model.md) | Crowd groups, movement, accumulation, utilization, density and overload |
 | [`Disruption_model.md`](Docs/Disruption_model.md) | Disruption types, severity, lifecycle and declared operational effects |
 | [`Prediction.md`](Docs/Prediction.md) | Forecast targets, horizon, confidence, staleness and failure handling |
-| [`Optimization.md`](Docs/Optimization.md) | Decision variables, constraints, objectives, ranking and approval handoff |
-| [`Simulation.md`](Docs/Simulation.md) | Sandbox scenarios, isolated state, metrics and strategy comparison |
+| [`EV-010_Optimization.md`](Docs/EV-010_Optimization.md) | Decision variables, constraints, objectives, ranking and approval handoff |
+| [`EV-011_Simulation.md`](Docs/EV-011_Simulation.md) | Sandbox scenarios, isolated state, metrics and strategy comparison |
 
 [`team.docs`](team.docs) tracks the full document set (EV-001 … EV-045) with each document's purpose, summary, priority and status.
 

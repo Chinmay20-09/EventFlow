@@ -3,7 +3,7 @@ import { VenueGraph } from "./graph"
 import { findPath } from "./pathfinding"
 import type {
   CapacityMetric, CrowdGroupInput, CrowdGroupResult, RouteFlexibility, SimulationParameters,
-  SimulationResult, SimulationStep, VenueEdge,
+  SimulationResult, SimulationStep, VenueEdge, ScopedMetric, SimulationEvent, SimulationWarning,
 } from "./types"
 
 interface RuntimeGroup {
@@ -34,7 +34,7 @@ interface IntervalTransfers {
   edgeOut: Map<string, number>
 }
 
-const DEFAULTS: Required<Pick<SimulationParameters, "durationSeconds" | "timestepSeconds" | "utilizationWarningThreshold" | "seed" | "speedSlowdownCoefficient" | "slowdownStartUtilization" | "minSpeedFactor" | "maxUpdateInterval">> = {
+const DEFAULTS: Required<Pick<SimulationParameters, "durationSeconds" | "timestepSeconds" | "utilizationWarningThreshold" | "seed" | "speedSlowdownCoefficient" | "slowdownStartUtilization" | "minSpeedFactor" | "maxUpdateInterval" | "densityMediumThreshold" | "densityHighThreshold" | "densityCriticalThreshold" | "queueWarningIntervals">> = {
   durationSeconds: 600,
   timestepSeconds: 15,
   utilizationWarningThreshold: 0.85,
@@ -43,22 +43,38 @@ const DEFAULTS: Required<Pick<SimulationParameters, "durationSeconds" | "timeste
   slowdownStartUtilization: 0.7,
   minSpeedFactor: 0.35,
   maxUpdateInterval: 60,
+  densityMediumThreshold: 0.5,
+  densityHighThreshold: 0.8,
+  densityCriticalThreshold: 1,
+  queueWarningIntervals: 1,
 }
 
 export class DeterministicSimulator {
-  private readonly graph: VenueGraph
-  private readonly parameters: typeof DEFAULTS
+  private graph: VenueGraph
+  private readonly parameters: typeof DEFAULTS & { simulatedStartTime: string }
+  private graphAtTime?: (timeSeconds: number) => VenueGraph
   private readonly initial: RuntimeGroup[]
   private sequence: number
 
-  constructor(graph: VenueGraph, groups: CrowdGroupInput[], parameters: Partial<SimulationParameters> = {}) {
+  constructor(graph: VenueGraph, groups: CrowdGroupInput[], parameters: Partial<SimulationParameters> = {}, options: { graphAtTime?: (timeSeconds: number) => VenueGraph } = {}) {
     this.graph = graph
-    this.parameters = { ...DEFAULTS, ...parameters }
+    this.parameters = { ...DEFAULTS, ...parameters, simulatedStartTime: parameters.simulatedStartTime ?? "1970-01-01T00:00:00.000Z" }
+    this.graphAtTime = options.graphAtTime
     if (this.parameters.durationSeconds < 0 || this.parameters.timestepSeconds <= 0) {
       throw new Error("Simulation duration and timestep must be valid")
     }
     if (this.parameters.minSpeedFactor <= 0 || this.parameters.minSpeedFactor > 1) {
       throw new Error("minSpeedFactor must be in (0, 1]")
+    }
+    if (!Number.isFinite(this.parameters.densityMediumThreshold)
+      || !Number.isFinite(this.parameters.densityHighThreshold)
+      || !Number.isFinite(this.parameters.densityCriticalThreshold)
+      || this.parameters.densityMediumThreshold < 0
+      || this.parameters.densityMediumThreshold > this.parameters.densityHighThreshold
+      || this.parameters.densityHighThreshold > this.parameters.densityCriticalThreshold
+      || this.parameters.queueWarningIntervals < 1
+      || !Number.isInteger(this.parameters.queueWarningIntervals)) {
+      throw new Error("Density thresholds and queue warning intervals must be valid")
     }
     this.sequence = 0
     this.initial = groups.slice().sort((a, b) => compareIds(a.id, b.id)).map((group) => this.createInitialGroup(group))
@@ -80,6 +96,7 @@ export class DeterministicSimulator {
     let transfersForSnapshot = emptyTransfers()
     let intervalForSnapshot = this.parameters.timestepSeconds
     while (true) {
+      if (this.graphAtTime) this.graph = this.graphAtTime(elapsed)
       const step = this.snapshot(groups, elapsed, transfersForSnapshot, intervalForSnapshot)
       steps.push(step)
       for (const metric of step.nodeMetrics) {
@@ -107,8 +124,44 @@ export class DeterministicSimulator {
     const totalPopulation = this.initial.reduce((sum, group) => sum + group.population, 0)
     const arrivedPopulation = groups.filter((group) => group.state === "ARRIVED").reduce((sum, group) => sum + group.population, 0)
     const weightedWait = groups.reduce((sum, group) => sum + group.waitingTime * group.population, 0)
+    const start = new Date(this.parameters.simulatedStartTime)
+    const end = new Date(start.getTime() + this.parameters.durationSeconds * 1000)
+    const metrics = summarizeMetrics(steps, groups, this.parameters.durationSeconds)
+    const scopedMetrics = buildScopedMetrics(steps, metrics)
+    const eventOutput = buildEvents(
+      steps,
+      this.parameters.simulatedStartTime,
+      this.graph,
+      this.parameters.utilizationWarningThreshold,
+      this.parameters.queueWarningIntervals,
+    )
+    const warnings: SimulationWarning[] = eventOutput.warnings
+    const events: SimulationEvent[] = eventOutput.events
+    const finalState = {
+      population: groups.filter((group) => !group.released).reduce((sum, group) => sum + group.population, 0),
+      overloadedNodes: final.nodeMetrics.filter((metric) => metric.overloaded).map((metric) => metric.id).sort(compareIds),
+      overloadedEdges: final.edgeMetrics.filter((metric) => metric.overloaded).map((metric) => metric.id).sort(compareIds),
+      activeScenarioDisruptions: [] as string[],
+      affectedEntityStatus: Object.fromEntries([
+        ...this.graph.nodes.map((node) => [node.id, node.status ?? "OPEN"]),
+        ...this.graph.edges.map((edge) => [edge.id, edge.status ?? "OPEN"]),
+      ]),
+    } as const
     return {
+      id: "SIMULATION_RESULT_BASELINE",
+      scenarioId: "BASELINE",
+      strategyId: null,
       status: "COMPLETED",
+      baseline: "CURRENT_GRAPH",
+      baselineRef: null,
+      seed: this.parameters.seed,
+      simulatedStartTime: start.toISOString(),
+      simulatedEndTime: end.toISOString(),
+      metrics,
+      scopedMetrics,
+      finalState,
+      events,
+      warnings,
       durationSeconds: this.parameters.durationSeconds,
       steps,
       final,
@@ -400,6 +453,11 @@ export class DeterministicSimulator {
         queue,
         0,
         intervalSeconds,
+        {
+          medium: this.parameters.densityMediumThreshold,
+          high: this.parameters.densityHighThreshold,
+          critical: this.parameters.densityCriticalThreshold,
+        },
       )
     })
     const edgeMetrics = this.graph.edges.map((edge) => {
@@ -416,6 +474,11 @@ export class DeterministicSimulator {
           0,
           flow,
           intervalSeconds,
+          {
+            medium: this.parameters.densityMediumThreshold,
+            high: this.parameters.densityHighThreshold,
+            critical: this.parameters.densityCriticalThreshold,
+          },
         ),
         id: edge.id,
       }
@@ -460,4 +523,134 @@ function sameRoute(first: string[], second: string[]): boolean {
 
 function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
+}
+
+function summarizeMetrics(steps: SimulationStep[], groups: RuntimeGroup[], duration: number) {
+  const final = steps[steps.length - 1]
+  const node = steps.flatMap((step) => step.nodeMetrics)
+  const edge = steps.flatMap((step) => step.edgeMetrics)
+  const total = groups.filter((group) => !group.released).reduce((sum, group) => sum + group.population, 0)
+  const arrived = groups.filter((group) => group.state === "ARRIVED").reduce((sum, group) => sum + group.population, 0)
+  const waiting = groups.reduce((sum, group) => sum + group.waitingTime * group.population, 0)
+  const travel = groups.reduce((sum, group) => sum + group.travelTime * group.population, 0)
+  const occupancy = Math.max(0, ...node.map((metric) => metric.currentOccupancy), ...edge.map((metric) => metric.currentOccupancy))
+  const flow = Math.max(0, ...edge.map((metric) => metric.flow))
+  const density = Math.max(0, ...node.map((metric) => metric.holdingUtilization ?? 0), ...edge.map((metric) => metric.flowUtilization ?? 0))
+  const queues = node.map((metric) => metric.queueSize)
+  return {
+    population: total, occupancy, flow, density,
+    queueSize: Math.max(0, ...queues),
+    waitingTime: total === 0 ? 0 : waiting / total,
+    travelTime: total === 0 ? 0 : travel / total,
+    arrivedPopulation: arrived, divertedPopulation: groups.filter((group) => group.state === "DIVERTED").reduce((sum, group) => sum + group.population, 0),
+    congestion: Math.max(0, ...final.nodeMetrics.map((metric) => metric.holdingUtilization ?? 0), ...final.edgeMetrics.map((metric) => metric.flowUtilization ?? 0)),
+    capacityUtilization: density, throughput: duration === 0 ? 0 : arrived * 60 / duration,
+    interventionImpact: null, timeToCongestion: null, peakCongestion: density, peakQueue: Math.max(0, ...queues),
+    recoveryTime: null, duration,
+  }
+}
+
+function buildScopedMetrics(steps: SimulationStep[], metrics: ReturnType<typeof summarizeMetrics>): ScopedMetric[] {
+  const final = steps[steps.length - 1]
+  const records: ScopedMetric[] = [{
+    metric: "population", targetType: "EVENT", targetId: null, aggregation: "FINAL", value: metrics.population, unit: "people",
+    }, {
+      metric: "arrived_population", targetType: "EVENT", targetId: null, aggregation: "SUM", value: metrics.arrivedPopulation, unit: "people",
+    }, {
+      metric: "throughput", targetType: "EVENT", targetId: null, aggregation: "MEAN", value: metrics.throughput, unit: "people/minute",
+    }, {
+      metric: "duration", targetType: "EVENT", targetId: null, aggregation: "FINAL", value: metrics.duration, unit: "seconds",
+  }]
+  for (const metric of final.nodeMetrics) records.push(
+    { metric: "occupancy", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.currentOccupancy, unit: "people" },
+    { metric: "queue_size", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.queueSize, unit: "people" },
+    { metric: "capacity_utilization", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.holdingUtilization, unit: "dimensionless" },
+  )
+  return records
+}
+
+function buildEvents(
+  steps: SimulationStep[],
+  startTime: string,
+  graph: VenueGraph,
+  warningThreshold: number,
+  queueWarningIntervals: number,
+): { events: SimulationEvent[]; warnings: SimulationWarning[] } {
+  const start = new Date(startTime).getTime()
+  const events: SimulationEvent[] = []
+  const warnings: SimulationWarning[] = []
+  const previous = new Map<string, string>()
+  const previousOverload = new Map<string, boolean>()
+  const previousQueue = new Map<string, number>()
+  const emittedStalled = new Set<string>()
+  const increasingIntervals = new Map<string, number>()
+  const previousDensity = new Map<string, CapacityMetric["densityState"]>()
+  const arrivedSources = new Set<string>()
+  for (const step of steps) {
+    const simTime = new Date(start + step.timeSeconds * 1000).toISOString()
+    for (const group of step.crowd) {
+      const prior = previous.get(group.sourceId ?? group.id)
+      const sourceId = group.sourceId ?? group.id
+      if (group.state === "ARRIVED" && prior !== "ARRIVED" && !arrivedSources.has(sourceId)) {
+        events.push({
+        simTime, type: "ARRIVAL", targetType: "GROUP", targetId: sourceId,
+        detail: { population: group.population, destination: group.destination },
+        })
+        arrivedSources.add(sourceId)
+        if (graph.node(group.destination)?.type === "EXIT") events.push({
+          simTime, type: "SINK_RELEASE", targetType: "GROUP", targetId: sourceId,
+          detail: { population: group.population, destination: group.destination, reason: "SINK_RELEASE" },
+        })
+      }
+      previous.set(group.sourceId ?? group.id, group.state)
+    }
+    for (const metric of [...step.nodeMetrics, ...step.edgeMetrics]) {
+      const isNode = step.nodeMetrics.some((candidate) => candidate.id === metric.id)
+      const key = `${isNode ? "NODE" : "EDGE"}:${metric.id}`
+      const overloaded = metric.overloaded === true
+      const wasOverloaded = previousOverload.get(key) ?? false
+      if (overloaded !== wasOverloaded) events.push({
+        simTime,
+        type: overloaded ? "OVERLOAD" : "OVERLOAD_CLEARED",
+        targetType: isNode ? "NODE" : "EDGE",
+        targetId: metric.id,
+        detail: { measured: isNode ? metric.currentOccupancy : metric.flow, capacity: metric.operationalCapacity, utilization: metric.utilization },
+      })
+      previousOverload.set(key, overloaded)
+      const priorDensity = previousDensity.get(key) ?? "UNKNOWN"
+      if ((metric.densityState === "HIGH" || metric.densityState === "CRITICAL")
+        && priorDensity !== "HIGH" && priorDensity !== "CRITICAL") {
+        events.push({ simTime, type: "HIGH_DENSITY", targetType: isNode ? "NODE" : "EDGE", targetId: metric.id, detail: { density: metric.density, density_state: metric.densityState } })
+      } else if ((priorDensity === "HIGH" || priorDensity === "CRITICAL")
+        && metric.densityState !== "HIGH" && metric.densityState !== "CRITICAL") {
+        events.push({ simTime, type: "DENSITY_CLEARED", targetType: isNode ? "NODE" : "EDGE", targetId: metric.id, detail: { density: metric.density, density_state: metric.densityState } })
+      }
+      previousDensity.set(key, metric.densityState)
+      const priorUtilization = previousQueue.get(`utilization:${key}`) ?? 0
+      const utilizationValue = metric.utilization ?? 0
+      if (!overloaded && utilizationValue >= warningThreshold && priorUtilization < warningThreshold) {
+        warnings.push({ code: "THRESHOLD_APPROACHING", message: `${key} crossed utilization warning threshold` })
+        events.push({ simTime, type: "THRESHOLD_CROSSED", targetType: isNode ? "NODE" : "EDGE", targetId: metric.id, detail: { utilization: utilizationValue, threshold: warningThreshold } })
+      }
+      previousQueue.set(`utilization:${key}`, utilizationValue)
+      if (isNode) {
+        const node = graph.node(metric.id)
+        const priorQueue = previousQueue.get(key) ?? 0
+        if (metric.queueSize > 0 && node?.throughputCapacity === 0 && !emittedStalled.has(key)) {
+          emittedStalled.add(key)
+          warnings.push({ code: "QUEUE_STALLED", message: `${key} has no positive service rate` })
+          events.push({ simTime, type: "QUEUE_STALLED", targetType: "NODE", targetId: metric.id, detail: { queue_size: metric.queueSize } })
+        }
+        const increasing = metric.queueSize > priorQueue
+        const intervals = increasing ? (increasingIntervals.get(key) ?? 0) + 1 : 0
+        increasingIntervals.set(key, intervals)
+        if (intervals >= queueWarningIntervals) {
+          events.push({ simTime, type: "QUEUE_INCREASING", targetType: "NODE", targetId: metric.id, detail: { queue_size: metric.queueSize, previous_queue_size: priorQueue, consecutive_intervals: intervals } })
+          if (intervals === queueWarningIntervals) warnings.push({ code: "QUEUE_INCREASING", message: `${key} increased for ${intervals} interval(s)` })
+        }
+        previousQueue.set(key, metric.queueSize)
+      }
+    }
+  }
+  return { events: events.sort((a, b) => a.simTime < b.simTime ? -1 : a.simTime > b.simTime ? 1 : a.type < b.type ? -1 : 1), warnings }
 }
