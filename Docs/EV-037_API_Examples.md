@@ -391,3 +391,183 @@ All examples follow EV-016:
 * EV-022 — Execution Model
 * EV-023 — Security
 * EV-024 — Error Handling
+
+---
+
+## Addendum — P4 Aggregate Endpoint Examples (added for the P4 frontend contract)
+
+> Examples for the endpoints introduced by the EV-016 addendum. EV-016
+> remains authoritative. No curl examples (per §2).
+
+### Dashboard
+
+```text
+GET /api/events/1/dashboard
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "event": { "event_id": 1, "name": "Mumbai Music Festival", "status": "ACTIVE", "start_time": "2026-10-10T10:00:00", "end_time": "2026-10-10T22:00:00" },
+    "stats": { "live_visitors": 4200, "crowd_level_pct": 70.0, "network_capacity_pct": 50.0, "risk_level": null, "alert_count": 2 },
+    "zones": [
+      { "node_id": 101, "name": "North Gate", "type": "GATE", "capacity": 5000, "current_crowd": 4600, "occupancy_pct": 92.0, "above_threshold": true, "crowd_updated_at": "2026-10-10T12:00:00" }
+    ],
+    "execution": { "strategy_set_id": null, "status": "Ready", "started_at": null, "completed_at": null },
+    "active_disruptions": [],
+    "predictions": [
+      { "prediction_id": 1, "node_id": 101, "node_name": "North Gate", "predicted_crowd": 4450.0, "predicted_occupancy_pct": 89.0, "prediction_horizon": 3600, "confidence": 0.9, "created_at": "2026-10-10T11:55:00" }
+    ]
+  }
+}
+```
+
+`risk_level` is `null` because no producer exists yet — P3 does not invent
+risk. `execution.status` is `"Ready"` when no execution record exists.
+
+### Zones
+
+```text
+GET /api/events/1/zones
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    { "node_id": 101, "name": "North Gate", "type": "GATE", "capacity": 5000, "current_crowd": 4600, "occupancy_pct": 92.0, "above_threshold": true, "crowd_updated_at": "2026-10-10T12:00:00" },
+    { "node_id": 103, "name": "East Zone", "type": "ZONE", "capacity": 3000, "current_crowd": null, "occupancy_pct": null, "above_threshold": false, "crowd_updated_at": null }
+  ]
+}
+```
+
+`occupancy_pct` is `null` when no crowd is stored or `capacity` is 0.
+Edge movement/flow is intentionally absent until P1 provides it.
+
+### Alerts
+
+```text
+GET /api/events/1/alerts
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    { "source": "disruption", "ref_id": 10, "title": "Weather event disruption", "location": "East Zone", "level": "MEDIUM", "created_at": "2026-10-10T11:52:00" },
+    { "source": "crowd_threshold", "ref_id": 101, "title": "Node crowd at or above 85% threshold", "location": "North Gate", "level": "HIGH", "created_at": "2026-10-10T12:00:00" }
+  ]
+}
+```
+
+### Timeline
+
+```text
+GET /api/events/1/timeline
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    { "source": "execution", "ref_id": 1, "message": "Execution completed for strategy set #1", "type": "success", "created_at": "2026-10-10T12:35:00" },
+    { "source": "approval", "ref_id": 1, "message": "Strategy set #1 approved", "type": "success", "created_at": "2026-10-10T12:30:00" },
+    { "source": "simulation", "ref_id": 1, "message": "Simulation completed for strategy set #1", "type": "warning", "created_at": "2026-10-10T12:29:00" }
+  ]
+}
+```
+
+Empty data arrays are returned when nothing is stored — entries are never
+invented.
+
+### Prediction forecast
+
+```text
+GET /api/events/1/predictions/forecast
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "event_id": 1,
+    "zones": [
+      {
+        "prediction_id": 1,
+        "node_id": 101,
+        "node_name": "North Gate",
+        "capacity": 5000,
+        "predicted_crowd": 4450.0,
+        "predicted_occupancy_pct": 89.0,
+        "prediction_horizon": 3600,
+        "confidence": 0.9,
+        "created_at": "2026-10-10T11:55:00",
+        "forecast_points": [
+          { "horizon_seconds": 600, "predicted_value": 4100.0, "predicted_occupancy_pct": 82.0, "confidence": 0.93 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+When P1 has not ingested predictions, `zones` is `[]`.
+
+### Current crowd ingestion (P1 → P3)
+
+```text
+POST /api/internal/crowd
+```
+
+```json
+{
+  "event_id": 1,
+  "node_id": 101,
+  "current_crowd": 3200,
+  "timestamp": "2026-10-10T12:00:00Z",
+  "source": "p1-crowd-engine",
+  "quality": 0.95
+}
+```
+
+```json
+{
+  "success": true,
+  "data": { "node_id": 101, "current_crowd": 3200, "updated_at": "2026-10-10T12:00:00" }
+}
+```
+
+### Settings
+
+```text
+GET /api/events/1/settings
+```
+
+```json
+{
+  "success": true,
+  "data": { "event_id": 1, "event_name": "Mumbai Music Festival", "max_capacity": 50000, "alert_threshold": 85, "auto_ai_alerts": true, "updated_at": null }
+}
+```
+
+`updated_at: null` means no settings row exists yet — defaults are
+returned and nothing is written by the GET.
+
+```text
+PUT /api/events/1/settings
+```
+
+```json
+{ "alert_threshold": 90 }
+```
+
+```json
+{
+  "success": true,
+  "data": { "event_id": 1, "event_name": "Mumbai Music Festival", "max_capacity": 50000, "alert_threshold": 90, "auto_ai_alerts": true, "updated_at": "2026-10-10T12:40:00" }
+}
+```
+
+Partial updates only change supplied fields. Requires an authenticated
+Organizer or Coordinator; a Visitor receives `FORBIDDEN`.

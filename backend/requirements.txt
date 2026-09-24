@@ -1,0 +1,11 @@
+# EventFlow P3 backend runtime
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]
+pydantic
+pydantic-settings
+
+# Tests
+pytest
+httpx
