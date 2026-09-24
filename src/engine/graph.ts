@@ -2,6 +2,7 @@ import type { Disruption, GraphOverride, VenueEdge, VenueGraphInput, VenueNode }
 
 const status = <T extends { status?: "OPEN" | "CLOSED" }>(item: T): "OPEN" | "CLOSED" =>
   item.status ?? "OPEN"
+const NODE_TYPES = new Set(["ZONE", "GATE", "ENTRANCE", "EXIT", "TRANSIT", "CHECKPOINT", "ROAD"])
 
 export class VenueGraph {
   readonly nodes: readonly VenueNode[]
@@ -21,6 +22,7 @@ export class VenueGraph {
     const nodeIds = new Set<string>()
     for (const node of nodes) {
       if (!node.id || nodeIds.has(node.id)) throw new Error(`Duplicate or empty node id: ${node.id}`)
+      if (!NODE_TYPES.has(node.type)) throw new Error(`Invalid node type for ${node.id}`)
       if (node.capacity !== null && (!Number.isInteger(node.capacity) || node.capacity < 0)) {
         throw new Error(`Invalid capacity for node ${node.id}`)
       }
@@ -47,7 +49,10 @@ export class VenueGraph {
         || edge.distance <= 0 || edge.baselineTime <= 0 || (edge.currentTime ?? 0) <= 0) {
         throw new Error(`Invalid traversal values for edge ${edge.id}`)
       }
-      if (edge.capacity !== null && edge.capacity < 0) throw new Error(`Invalid capacity for edge ${edge.id}`)
+      if (edge.from === edge.to) throw new Error(`Self-loop edge is not allowed: ${edge.id}`)
+      if (edge.capacity === null || !Number.isFinite(edge.capacity) || edge.capacity <= 0) {
+        throw new Error(`Invalid capacity for edge ${edge.id}`)
+      }
       if (edge.operationalCapacity !== undefined && edge.operationalCapacity !== null
         && (!Number.isFinite(edge.operationalCapacity) || edge.operationalCapacity < 0)) {
         throw new Error(`Invalid operational capacity for edge ${edge.id}`)
@@ -109,6 +114,7 @@ export class VenueGraph {
     const edges = this.edges.map((edge) => ({ ...edge }))
     const nodeMap = new Map(nodes.map((node) => [node.id, node]))
     const edgeMap = new Map(edges.map((edge) => [edge.id, edge]))
+    const closedTargets = new Set<string>()
     const apply = (override: GraphOverride) => {
       const item = override.scope === "NODE" ? nodeMap.get(override.targetId) : edgeMap.get(override.targetId)
       if (!item) throw new Error(`Unknown graph override target: ${override.targetId}`)
@@ -130,14 +136,23 @@ export class VenueGraph {
         const edgeIds = disruption.affectedEdges ?? []
         for (const id of nodeIds) if (!nodeMap.has(id)) throw new Error(`Unknown disruption node target: ${id}`)
         for (const id of edgeIds) if (!edgeMap.has(id)) throw new Error(`Unknown disruption edge target: ${id}`)
-        if (["CLOSED_GATE", "EMERGENCY_EXIT_UNAVAILABLE"].includes(disruption.type)) {
+        if (["CLOSED_GATE", "GATE_CLOSURE", "EMERGENCY_EXIT_UNAVAILABLE"].includes(disruption.type)) {
           nodeIds.forEach((id) => {
             const node = nodeMap.get(id)
-            if (node) node.status = "CLOSED"
+            if (node) {
+              node.status = "CLOSED"
+              closedTargets.add(`NODE:${id}`)
+            }
           })
         }
-        if (["BLOCKED_CORRIDOR", "CLOSED_GATE"].includes(disruption.type)) {
-          edgeIds.forEach((id) => { const edge = edgeMap.get(id); if (edge) edge.status = "CLOSED" })
+        if (["BLOCKED_CORRIDOR", "ROAD_CLOSURE", "CLOSED_GATE", "GATE_CLOSURE"].includes(disruption.type)) {
+          edgeIds.forEach((id) => {
+            const edge = edgeMap.get(id)
+            if (edge) {
+              edge.status = "CLOSED"
+              closedTargets.add(`EDGE:${id}`)
+            }
+          })
         }
         if (disruption.type === "REDUCED_CAPACITY" && disruption.capacity !== undefined) {
           edgeIds.forEach((id) => {
@@ -149,7 +164,7 @@ export class VenueGraph {
             if (node) node.operationalCapacity = Math.min(node.operationalCapacity ?? node.capacity ?? disruption.capacity!, disruption.capacity!)
           })
         }
-        if (disruption.type === "RESTRICTED_ZONE" && disruption.restriction) {
+        if (["RESTRICTED_ZONE", "ACCESS_RESTRICTION"].includes(disruption.type) && disruption.restriction) {
           nodeIds.forEach((id) => {
             const node = nodeMap.get(id)
             if (node && disruption.restriction) node.restrictions = [...new Set([...(node.restrictions ?? []), disruption.restriction])]
@@ -170,10 +185,22 @@ export class VenueGraph {
           if (effect.targetType === "EVENT" || effect.targetId === null) continue
           const target = effect.targetType === "NODE" ? nodeMap.get(effect.targetId) : edgeMap.get(effect.targetId)
           if (!target) throw new Error(`Unknown disruption effect target: ${effect.targetId}`)
-          if (effect.parameter === "status") target.status = effect.proposedValue as "OPEN" | "CLOSED"
-          if (effect.parameter === "capacity") target.operationalCapacity = Number(effect.proposedValue)
+          const targetKey = `${effect.targetType}:${effect.targetId}`
+          if (effect.parameter === "status") {
+            if (effect.proposedValue === "CLOSED") {
+              target.status = "CLOSED"
+              closedTargets.add(targetKey)
+            } else if (!closedTargets.has(targetKey)) {
+              target.status = "OPEN"
+            }
+          }
+          if (effect.parameter === "capacity") {
+            const proposed = Number(effect.proposedValue)
+            target.operationalCapacity = Math.min(target.operationalCapacity ?? proposed, proposed)
+          }
           if (effect.parameter === "throughput_capacity" && "throughputCapacity" in target) {
-            target.throughputCapacity = Number(effect.proposedValue)
+            const proposed = Number(effect.proposedValue)
+            target.throughputCapacity = Math.min(target.throughputCapacity ?? proposed, proposed)
           }
           if (effect.parameter === "restriction") {
             target.restrictions = [...new Set([...(target.restrictions ?? []), String(effect.proposedValue)])]

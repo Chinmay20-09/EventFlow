@@ -164,6 +164,14 @@ export interface SimulationStep {
   nodeMetrics: CapacityMetric[]
   edgeMetrics: EdgeMetric[]
   crowd: CrowdGroupResult[]
+  transfers: TransferLedger
+}
+
+export interface TransferLedger {
+  nodeIn: Record<string, number>
+  nodeOut: Record<string, number>
+  edgeIn: Record<string, number>
+  edgeOut: Record<string, number>
 }
 
 export type SimulationStatus = "COMPLETED" | "TERMINATED" | "INVALID_INPUT" | "INVALID_SCENARIO" | "INVALID_OVERRIDE" | "SIMULATION_FAILURE" | "TIMEOUT"
@@ -259,10 +267,30 @@ export interface GraphOverride {
 export interface SandboxInput {
   graph: VenueGraphInput
   crowd: CrowdGroupInput[]
+  adjustments?: PopulationAdjustment[]
   disruptions?: Disruption[]
   graphOverrides?: GraphOverride[]
   parameters?: Partial<SimulationParameters>
   scenario?: ScenarioInput
+}
+
+export type PopulationAdjustmentReason =
+  | "SOURCE_DEMAND"
+  | "ENTRANCE_DEMAND"
+  | "SINK_RELEASE"
+  | "SENSOR_CORRECTION"
+  | "MANUAL_ADJUSTMENT"
+  | "SCENARIO_INJECTION"
+
+export interface PopulationAdjustment {
+  id: string
+  reason: PopulationAdjustmentReason
+  scope: "NODE" | "GROUP" | "EVENT"
+  targetId: string | null
+  amount: number
+  timestamp?: string
+  destination?: string
+  averageSpeed?: number
 }
 
 export type Baseline = "INITIAL_GRAPH" | "CURRENT_GRAPH" | "CAPTURED_STATE"
@@ -318,12 +346,15 @@ export interface ScenarioComparison {
     arrivedPopulationDelta: number
     estimatedDelaySecondsDelta: number
   }>
+  valid?: boolean
+  warnings?: string[]
+  metricMatrix?: Record<string, Record<string, number | null>>
 }
 
 export interface OptimizationChange {
   scope: "NODE" | "EDGE"
   targetId: string
-  parameter: "status" | "capacity" | "throughput_capacity"
+  parameter: "status" | "capacity" | "throughput_capacity" | "demand_share"
   previousValue: string | number | null
   proposedValue: string | number | null
 }
@@ -331,6 +362,9 @@ export interface OptimizationChange {
 export interface OptimizationInput {
   graph: VenueGraphInput
   maxCandidates?: number
+  allowStatusChange?: boolean
+  allowDemandRebalancing?: boolean
+  demandShares?: Record<string, number>
   allowNodeCapacityChange?: boolean
   allowEdgeCapacityChange?: boolean
   allowThroughputChange?: boolean
@@ -340,6 +374,10 @@ export interface OptimizationInput {
   operatorLocked?: string[]
   excludedEntities?: string[]
   maxStatusChanges?: number
+  maxParameterChanges?: number
+  controllableNodes?: string[]
+  controllableEdges?: string[]
+  disruptionAppliedValues?: Record<string, string | number>
 }
 
 export interface OptimizationCandidate {
@@ -370,6 +408,7 @@ export interface CandidateEvaluation {
     throughput: number
   } | null
   simulation: SimulationResult | null
+  rank?: number
 }
 
 export interface OptimizationResult {
@@ -378,6 +417,11 @@ export interface OptimizationResult {
   rejected: CandidateEvaluation[]
   weights: OptimizationWeights
   solver: "DETERMINISTIC_FALLBACK" | "EXTERNAL_ADAPTER"
+  ranking?: string[]
+  diagnostics?: { rejectedCount: number; rejectionReasons: Record<string, number> }
+  reason?: "NO_FEASIBLE_CANDIDATE" | "ALL_SIMULATIONS_FAILED" | null
+  objectiveSummary?: { weights: OptimizationWeights; candidateObjectives: Record<string, number | null> }
+  constraintsSummary?: { rejectedCount: number; rejectionReasons: Record<string, number> }
 }
 
 export interface StrategySolver {

@@ -3,7 +3,7 @@ import { VenueGraph } from "./graph"
 import { findPath } from "./pathfinding"
 import type {
   CapacityMetric, CrowdGroupInput, CrowdGroupResult, RouteFlexibility, SimulationParameters,
-  SimulationResult, SimulationStep, VenueEdge, ScopedMetric, SimulationEvent, SimulationWarning,
+  SimulationResult, SimulationStep, VenueEdge, ScopedMetric, SimulationEvent, SimulationWarning, TransferLedger,
 } from "./types"
 
 interface RuntimeGroup {
@@ -126,7 +126,7 @@ export class DeterministicSimulator {
     const weightedWait = groups.reduce((sum, group) => sum + group.waitingTime * group.population, 0)
     const start = new Date(this.parameters.simulatedStartTime)
     const end = new Date(start.getTime() + this.parameters.durationSeconds * 1000)
-    const metrics = summarizeMetrics(steps, groups, this.parameters.durationSeconds)
+    const metrics = summarizeMetrics(steps, groups, this.parameters.durationSeconds, totalPopulation, this.parameters.utilizationWarningThreshold)
     const scopedMetrics = buildScopedMetrics(steps, metrics)
     const eventOutput = buildEvents(
       steps,
@@ -136,7 +136,13 @@ export class DeterministicSimulator {
       this.parameters.queueWarningIntervals,
     )
     const warnings: SimulationWarning[] = eventOutput.warnings
-    const events: SimulationEvent[] = eventOutput.events
+    const events: SimulationEvent[] = [...eventOutput.events, {
+      simTime: end.toISOString(),
+      type: "TERMINATION",
+      targetType: "EVENT",
+      targetId: null,
+      detail: { reason: "DURATION_REACHED", duration_seconds: this.parameters.durationSeconds },
+    }]
     const finalState = {
       population: groups.filter((group) => !group.released).reduce((sum, group) => sum + group.population, 0),
       overloadedNodes: final.nodeMetrics.filter((metric) => metric.overloaded).map((metric) => metric.id).sort(compareIds),
@@ -179,7 +185,9 @@ export class DeterministicSimulator {
   }
 
   private createInitialGroup(group: CrowdGroupInput): RuntimeGroup {
-    if (group.population < 0 || !Number.isFinite(group.population)) throw new Error(`Invalid population for ${group.id}`)
+    if (!Number.isInteger(group.population) || group.population < 0 || !Number.isFinite(group.population)) {
+      throw new Error(`Invalid population for ${group.id}`)
+    }
     if (!this.graph.node(group.destination)) throw new Error(`Unknown destination for ${group.id}`)
     if (group.currentLocation.kind === "NODE" && !this.graph.node(group.currentLocation.id)) throw new Error(`Unknown location for ${group.id}`)
     const edge = group.currentLocation.kind === "EDGE" ? this.graph.edge(group.currentLocation.id) : undefined
@@ -372,6 +380,7 @@ export class DeterministicSimulator {
       ...group,
       id: population === group.population ? group.id : `${group.sourceId}#${String(this.sequence++).padStart(4, "0")}`,
       population,
+      preferredRoute: group.preferredRoute[0] === edge.id ? group.preferredRoute.slice(1) : [...group.preferredRoute],
       location: { kind: "EDGE", id: edge.id },
       state: diverted ? "DIVERTED" : "MOVING",
       progress: 0,
@@ -501,12 +510,23 @@ export class DeterministicSimulator {
       movementRate: group.movementRate,
       route: group.assignedRoute,
     }))
-    return { timeSeconds, nodeMetrics, edgeMetrics, crowd }
+    return { timeSeconds, nodeMetrics, edgeMetrics, crowd, transfers: serializeTransfers(transfers) }
   }
 }
 
 function emptyTransfers(): IntervalTransfers {
   return { nodeIn: new Map(), nodeOut: new Map(), edgeIn: new Map(), edgeOut: new Map() }
+}
+
+function serializeTransfers(transfers: IntervalTransfers): TransferLedger {
+  const record = (values: Map<string, number>): Record<string, number> =>
+    Object.fromEntries([...values.entries()].sort(([a], [b]) => compareIds(a, b)))
+  return {
+    nodeIn: record(transfers.nodeIn),
+    nodeOut: record(transfers.nodeOut),
+    edgeIn: record(transfers.edgeIn),
+    edgeOut: record(transfers.edgeOut),
+  }
 }
 
 function rate(value: number, seconds: number): number {
@@ -525,33 +545,54 @@ function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-function summarizeMetrics(steps: SimulationStep[], groups: RuntimeGroup[], duration: number) {
+function summarizeMetrics(
+  steps: SimulationStep[],
+  groups: RuntimeGroup[],
+  duration: number,
+  cohortPopulation: number,
+  congestionThreshold: number,
+) {
   const final = steps[steps.length - 1]
   const node = steps.flatMap((step) => step.nodeMetrics)
   const edge = steps.flatMap((step) => step.edgeMetrics)
-  const total = groups.filter((group) => !group.released).reduce((sum, group) => sum + group.population, 0)
   const arrived = groups.filter((group) => group.state === "ARRIVED").reduce((sum, group) => sum + group.population, 0)
   const waiting = groups.reduce((sum, group) => sum + group.waitingTime * group.population, 0)
+  // Released groups remain in the runtime ledger so completed travel is included.
+  const travelPopulation = groups.reduce((sum, group) => sum + group.population, 0)
   const travel = groups.reduce((sum, group) => sum + group.travelTime * group.population, 0)
   const occupancy = Math.max(0, ...node.map((metric) => metric.currentOccupancy), ...edge.map((metric) => metric.currentOccupancy))
   const flow = Math.max(0, ...edge.map((metric) => metric.flow))
   const density = Math.max(0, ...node.map((metric) => metric.holdingUtilization ?? 0), ...edge.map((metric) => metric.flowUtilization ?? 0))
   const queues = node.map((metric) => metric.queueSize)
+  const divertedSources = new Set(steps.flatMap((step) => step.crowd
+    .filter((group) => group.state === "DIVERTED").map((group) => group.sourceId ?? group.id)))
+  const congestionByStep = steps.map((step) => Math.max(
+    0,
+    ...step.nodeMetrics.map((metric) => metric.holdingUtilization ?? 0),
+    ...step.edgeMetrics.map((metric) => metric.flowUtilization ?? 0),
+  ))
+  const congestionIndex = congestionByStep.findIndex((value) => value >= congestionThreshold)
+  const recoveryIndex = congestionIndex < 0 ? -1
+    : congestionByStep.slice(congestionIndex + 1).findIndex((value) => value < congestionThreshold)
   return {
-    population: total, occupancy, flow, density,
+    population: cohortPopulation, occupancy, flow, density,
     queueSize: Math.max(0, ...queues),
-    waitingTime: total === 0 ? 0 : waiting / total,
-    travelTime: total === 0 ? 0 : travel / total,
-    arrivedPopulation: arrived, divertedPopulation: groups.filter((group) => group.state === "DIVERTED").reduce((sum, group) => sum + group.population, 0),
+    waitingTime: cohortPopulation === 0 ? 0 : waiting / cohortPopulation,
+    travelTime: travelPopulation === 0 ? 0 : travel / travelPopulation,
+    arrivedPopulation: arrived,
+    divertedPopulation: groups.filter((group) => divertedSources.has(group.sourceId)).reduce((sum, group) => sum + group.population, 0),
     congestion: Math.max(0, ...final.nodeMetrics.map((metric) => metric.holdingUtilization ?? 0), ...final.edgeMetrics.map((metric) => metric.flowUtilization ?? 0)),
     capacityUtilization: density, throughput: duration === 0 ? 0 : arrived * 60 / duration,
-    interventionImpact: null, timeToCongestion: null, peakCongestion: density, peakQueue: Math.max(0, ...queues),
-    recoveryTime: null, duration,
+    interventionImpact: null,
+    timeToCongestion: congestionIndex < 0 ? null : steps[congestionIndex].timeSeconds,
+    peakCongestion: density,
+    peakQueue: Math.max(0, ...queues),
+    recoveryTime: recoveryIndex < 0 ? null : steps[congestionIndex + 1 + recoveryIndex].timeSeconds,
+    duration,
   }
 }
 
 function buildScopedMetrics(steps: SimulationStep[], metrics: ReturnType<typeof summarizeMetrics>): ScopedMetric[] {
-  const final = steps[steps.length - 1]
   const records: ScopedMetric[] = [{
     metric: "population", targetType: "EVENT", targetId: null, aggregation: "FINAL", value: metrics.population, unit: "people",
     }, {
@@ -561,11 +602,24 @@ function buildScopedMetrics(steps: SimulationStep[], metrics: ReturnType<typeof 
     }, {
       metric: "duration", targetType: "EVENT", targetId: null, aggregation: "FINAL", value: metrics.duration, unit: "seconds",
   }]
-  for (const metric of final.nodeMetrics) records.push(
-    { metric: "occupancy", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.currentOccupancy, unit: "people" },
-    { metric: "queue_size", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.queueSize, unit: "people" },
-    { metric: "capacity_utilization", targetType: "NODE", targetId: metric.id, aggregation: "PEAK", value: metric.holdingUtilization, unit: "dimensionless" },
-  )
+  const nodeIds = [...new Set(steps.flatMap((step) => step.nodeMetrics.map((metric) => metric.id)))].sort(compareIds)
+  for (const id of nodeIds) {
+    const values = steps.flatMap((step) => step.nodeMetrics.filter((metric) => metric.id === id))
+    records.push(
+      { metric: "occupancy", targetType: "NODE", targetId: id, aggregation: "PEAK", value: Math.max(...values.map((metric) => metric.currentOccupancy)), unit: "people" },
+      { metric: "queue_size", targetType: "NODE", targetId: id, aggregation: "PEAK", value: Math.max(...values.map((metric) => metric.queueSize)), unit: "people" },
+      { metric: "capacity_utilization", targetType: "NODE", targetId: id, aggregation: "PEAK", value: Math.max(...values.map((metric) => metric.holdingUtilization ?? 0)), unit: "dimensionless" },
+    )
+  }
+  const edgeIds = [...new Set(steps.flatMap((step) => step.edgeMetrics.map((metric) => metric.id)))].sort(compareIds)
+  for (const id of edgeIds) {
+    const values = steps.flatMap((step) => step.edgeMetrics.filter((metric) => metric.id === id))
+    records.push(
+      { metric: "occupancy", targetType: "EDGE", targetId: id, aggregation: "PEAK", value: Math.max(...values.map((metric) => metric.currentOccupancy)), unit: "people" },
+      { metric: "flow", targetType: "EDGE", targetId: id, aggregation: "MEAN", value: values.reduce((sum, metric) => sum + metric.flow, 0) / values.length, unit: "people/minute" },
+      { metric: "capacity_utilization", targetType: "EDGE", targetId: id, aggregation: "PEAK", value: Math.max(...values.map((metric) => metric.flowUtilization ?? 0)), unit: "dimensionless" },
+    )
+  }
   return records
 }
 
@@ -585,12 +639,17 @@ function buildEvents(
   const emittedStalled = new Set<string>()
   const increasingIntervals = new Map<string, number>()
   const previousDensity = new Map<string, CapacityMetric["densityState"]>()
+  const previousGroups = new Map<string, { state: CrowdGroupResult["state"]; route: string[] }>()
+  const emittedDiversions = new Set<string>()
+  const emittedSplits = new Set<string>()
   const arrivedSources = new Set<string>()
   for (const step of steps) {
     const simTime = new Date(start + step.timeSeconds * 1000).toISOString()
+    const childrenBySource = new Map<string, CrowdGroupResult[]>()
     for (const group of step.crowd) {
       const prior = previous.get(group.sourceId ?? group.id)
       const sourceId = group.sourceId ?? group.id
+      const priorGroup = previousGroups.get(sourceId)
       if (group.state === "ARRIVED" && prior !== "ARRIVED" && !arrivedSources.has(sourceId)) {
         events.push({
         simTime, type: "ARRIVAL", targetType: "GROUP", targetId: sourceId,
@@ -602,7 +661,29 @@ function buildEvents(
           detail: { population: group.population, destination: group.destination, reason: "SINK_RELEASE" },
         })
       }
+      if (group.state === "DIVERTED" && priorGroup && priorGroup.state !== "DIVERTED" && !emittedDiversions.has(sourceId)) {
+        events.push({
+          simTime, type: "DIVERSION", targetType: "GROUP", targetId: sourceId,
+          detail: { previous_route: priorGroup?.route ?? [], assigned_route: group.assignedRoute ?? [], population: group.population },
+        })
+        emittedDiversions.add(sourceId)
+      }
+      previousGroups.set(sourceId, { state: group.state, route: [...(group.assignedRoute ?? [])] })
       previous.set(group.sourceId ?? group.id, group.state)
+      if (group.id.includes("#")) {
+        const children = childrenBySource.get(sourceId) ?? []
+        children.push(group)
+        childrenBySource.set(sourceId, children)
+      }
+    }
+    for (const [sourceId, children] of childrenBySource) {
+      if (children.length > 0 && !emittedSplits.has(`${sourceId}:${step.timeSeconds}`)) {
+        events.push({
+          simTime, type: "SPLIT", targetType: "GROUP", targetId: sourceId,
+          detail: { parent_id: sourceId, child_ids: children.map((child) => child.id).sort(compareIds), populations: children.map((child) => child.population) },
+        })
+        emittedSplits.add(`${sourceId}:${step.timeSeconds}`)
+      }
     }
     for (const metric of [...step.nodeMetrics, ...step.edgeMetrics]) {
       const isNode = step.nodeMetrics.some((candidate) => candidate.id === metric.id)
@@ -624,6 +705,7 @@ function buildEvents(
       } else if ((priorDensity === "HIGH" || priorDensity === "CRITICAL")
         && metric.densityState !== "HIGH" && metric.densityState !== "CRITICAL") {
         events.push({ simTime, type: "DENSITY_CLEARED", targetType: isNode ? "NODE" : "EDGE", targetId: metric.id, detail: { density: metric.density, density_state: metric.densityState } })
+        events.push({ simTime, type: "RECOVERY", targetType: isNode ? "NODE" : "EDGE", targetId: metric.id, detail: { density: metric.density, density_state: metric.densityState } })
       }
       previousDensity.set(key, metric.densityState)
       const priorUtilization = previousQueue.get(`utilization:${key}`) ?? 0

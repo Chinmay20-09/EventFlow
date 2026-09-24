@@ -100,6 +100,10 @@ export function serializeSimulationResult(result: SimulationResult): Record<stri
       node_metrics: step.nodeMetrics.map(serializeMetric),
       edge_metrics: step.edgeMetrics.map(serializeMetric),
       crowd: step.crowd.map(serializeCrowdGroup),
+      transfers: {
+        node_in: step.transfers.nodeIn, node_out: step.transfers.nodeOut,
+        edge_in: step.transfers.edgeIn, edge_out: step.transfers.edgeOut,
+      },
     })),
     diagnostics: result.diagnostics,
     warnings: result.warnings,

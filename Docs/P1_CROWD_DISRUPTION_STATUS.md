@@ -1,100 +1,45 @@
-# P1 — Crowd Disruption Engine
+# P1 Crowd Disruption Engine Status
 
 ## Status
 
-IN PROGRESS
+**IN PROGRESS** — the deterministic core and the remaining fix-phase boundaries are operational; native OR-Tools and some extended schema/provenance details remain outside the current adapter.
 
-## Implemented
+## Implemented in this fix phase
 
-### Graph / Digital Twin
+- EV-006 graph validation now rejects unknown node types, self-loops, and non-finite/non-positive edge capacities.
+- Canonical EV-008 closure types are supported alongside legacy compatibility names.
+- Simultaneous applied capacity effects reconcile by the most restrictive value; closures cannot be reopened by a later effect.
+- Applied disruption targets and effect parameter combinations are validated against the scenario graph.
+- Simulation timelines now include termination, diversion, and recovery transitions.
+- Each simulation step now serializes physical node/edge transfer ledgers, including split conservation.
+- Run-level population is the initial cohort; remaining population is reported separately. Scoped occupancy/queue/utilization use documented peak aggregation.
+- Scenario comparisons expose compatibility warnings, validity, and a metric matrix instead of silently treating incompatible runs as equivalent.
+- Optimization fallback supports bounded status candidates, disruption-applied locks, deterministic ranks, candidate ordering, and rejection summaries.
+- Optimization supports deterministic demand-share rebalancing across configured active entries with integer largest-remainder allocation.
+- `runSandboxSafe` returns structured `INVALID_SCENARIO`, `INVALID_OVERRIDE`, `INVALID_INPUT`, and `SIMULATION_FAILURE` results with diagnostics.
+- External populations remain integer people; internal transfers remain continuous mass without rounding.
+- `travelTime` remains the population-weighted mean of accumulated movement time across the full runtime cohort.
+- `strandedPopulation` remains a compatibility name for population not arrived at simulation end, not permanent stranding.
 
-- Directed venue graph with nodes, edges, capacities, availability, validation, cloning, and deterministic serialization.
-- Scenario overrides operate on isolated graph copies.
+## Current contract boundaries
 
-### Routing
-
-- Deterministic pathfinding with stable tie-breaking, capacity-aware costs, congestion-aware costs, and flexible rerouting.
-
-### Crowd Simulation
-
-- Aggregate crowd groups with node/edge locations, movement, edge progress, waiting, stopping, diversion, arrival, travel time, and stranded-state reporting.
-- FIFO queue service and deterministic timestep execution.
-
-### Capacity
-
-- Separate physical and operational capacity.
-- Node holding/service metrics and edge occupancy/flow metrics.
-- Utilization, overflow, bottleneck, overload, density, and configurable density-state thresholds.
-
-### Disruptions
-
-- Blocked, closed, restricted, reduced-capacity, increased-travel-time, and unavailable-exit effects.
-- Deterministic scheduled activation and expected-duration resolution on the simulated clock.
-
-### Congestion
-
-- Node-load movement slowdown and congestion-aware route costs.
-- Queue-stalled, queue-growth, overload, threshold, density, arrival, and sink-release events.
-
-### Sandbox
-
-- Scenario metadata, graph/crowd overrides, interventions, isolated state, deterministic simulated timestamps, and lifecycle events.
-
-### Optimization
-
-- `StrategySolver.solve(...)` boundary.
-- Deterministic candidate fallback, feasibility checks, sandbox evaluation, objective calculation, and ranking.
-
-### Serialization / Integration
-
-- Explicit snake_case graph and simulation-result serialization for P2/P3 handoff.
-
-### Testing
-
-- 26 Vitest cases covering graph validation, routing, capacity, propagation, queues, disruptions, determinism, sandbox lifecycle, events, serialization, operational effects, and optimization feasibility.
-- Interactive manual harness: `npx tsx scripts/test_Crowd.ts` with presets, custom input, comparison, step inspection, determinism checks, and JSON export.
-
-## What Remains
-
-### EV-007
-
-- Complete physical transfer ledgers and adjustment-event accounting.
-- Complete documented event matrix and scoped metric aggregation.
-
-### EV-010
-
-- Implement all documented C1-C9 decision-variable and constraint semantics.
-- Match the documented optimization result, objective summary, constraint summary, and failure-status schemas.
-
-### EV-011
-
-- Add complete operational-parameter and EV-008 effect contracts.
-- Return structured invalid/failure results instead of relying primarily on thrown validation errors.
-- Complete scoped metric aggregation, comparison compatibility validation, and exact same-time event ordering.
-
-### Integration
-
+- Native OR-Tools CP-SAT is not installed. `StrategySolver` remains the model-agnostic boundary and the deterministic fallback is explicitly identified as such.
 - Backend/API integration is outside this repository.
-- Native OR-Tools CP-SAT adapter is not installed.
-
-### Testing
-
-- Add targeted tests for remaining EV-007 accounting, EV-010 constraints/output, EV-011 failure/comparison, and full disruption provenance semantics.
-
-## Current Limitations
-
-- Deterministic fallback implemented; native OR-Tools adapter not installed.
-- Some documented EV-007 metrics/events and EV-011 failure/comparison semantics remain incomplete.
-- Backend integration is outside the current repository.
+- Structured invalid/failure result objects and the complete EV-007 adjustment ledger still require implementation.
 
 ## Validation
 
-- `npm test`: passed — 26 tests.
-- `npm run build`: passed.
-- `npm run lint`: completed with two existing `UI/app.js` unused-function warnings.
-- `npx tsc -b`: passed.
-- Manual harness: passed for normal, blocked, gate-failure, comparison, stress, determinism, and export modes.
+- `npm test`: 35 tests passed.
+- `npx tsc -b`: passed after the final fix-phase changes.
+- Manual three-person route: initial `3`, arrived `3`, remaining `0`, average travel `60.00s`.
+- `npm run build` and `npm run lint`: previously passed; lint retains two existing `UI/app.js` unused-function warnings.
 
-## Last Updated
+## Specification status
 
-2026-09-24
+| Specification | Status |
+| --- | --- |
+| EV-006 | Core graph and isolation implemented; coordinate/provenance extensions remain |
+| EV-007 | Core propagation, capacity, queues, flow, continuous mass, travel-time semantics, transfer ledgers, split events, and typed external adjustments implemented |
+| EV-008 | Timed effects, canonical closures, restrictive reconciliation, and validation implemented; full lifecycle provenance remains |
+| EV-010 | Deterministic fallback boundary, bounded status/capacity/throughput/demand-share variables, feasibility, ranking, summaries, and diagnostics implemented; native OR-Tools remains unavailable |
+| EV-011 | Deterministic simulation, timeline, transfer serialization, scoped metrics, structured safe failures, and comparison diagnostics implemented |

@@ -31,9 +31,30 @@ export class DeterministicFallbackSolver implements StrategySolver {
 export function generateCandidates(input: OptimizationInput): OptimizationCandidate[] {
   const locked = new Set([...(input.disruptionLocked ?? []), ...(input.operatorLocked ?? []), ...(input.excludedEntities ?? [])])
   const changes: OptimizationCandidate["changes"] = []
+  if (input.allowStatusChange) {
+    for (const node of input.graph.nodes.slice().sort((a, b) => compareIds(a.id, b.id))) {
+      if (locked.has(node.id) || (input.controllableNodes && !input.controllableNodes.includes(node.id))) continue
+      changes.push({ scope: "NODE", targetId: node.id, parameter: "status", previousValue: node.status ?? "OPEN", proposedValue: node.status === "OPEN" ? "CLOSED" : "OPEN" })
+    }
+    if (input.allowDemandRebalancing) {
+      const entries = (input.graph.activeEntries ?? []).slice().sort(compareIds)
+      const shares = entries.map((id) => input.demandShares?.[id] ?? (entries.length === 0 ? 0 : 1 / entries.length))
+      const equalShares = entries.length === 0 ? [] : entries.map(() => 1 / entries.length)
+      if (entries.length > 0 && shares.some((share, index) => Math.abs(share - equalShares[index]) > 1e-9)) {
+        entries.forEach((id, index) => changes.push({
+          scope: "NODE", targetId: id, parameter: "demand_share",
+          previousValue: shares[index], proposedValue: equalShares[index],
+        }))
+      }
+    }
+    for (const edge of input.graph.edges.slice().sort((a, b) => compareIds(a.id, b.id))) {
+      if (locked.has(edge.id) || (input.controllableEdges && !input.controllableEdges.includes(edge.id))) continue
+      changes.push({ scope: "EDGE", targetId: edge.id, parameter: "status", previousValue: edge.status ?? "OPEN", proposedValue: edge.status === "OPEN" ? "CLOSED" : "OPEN" })
+    }
+  }
   if (input.allowNodeCapacityChange) {
     for (const node of input.graph.nodes.slice().sort((a, b) => compareIds(a.id, b.id))) {
-      if (locked.has(node.id) || node.capacity === null) continue
+      if (locked.has(node.id) || (input.controllableNodes && !input.controllableNodes.includes(node.id)) || node.capacity === null) continue
       const minimum = input.minimumCapacity?.[node.id] ?? 0
       if (minimum >= 0 && minimum < (node.operationalCapacity ?? node.capacity)) {
         changes.push({ scope: "NODE", targetId: node.id, parameter: "capacity", previousValue: node.operationalCapacity ?? node.capacity, proposedValue: minimum })
@@ -42,7 +63,7 @@ export function generateCandidates(input: OptimizationInput): OptimizationCandid
   }
   if (input.allowEdgeCapacityChange) {
     for (const edge of input.graph.edges.slice().sort((a, b) => compareIds(a.id, b.id))) {
-      if (locked.has(edge.id) || edge.capacity === null) continue
+      if (locked.has(edge.id) || (input.controllableEdges && !input.controllableEdges.includes(edge.id)) || edge.capacity === null) continue
       const minimum = input.minimumCapacity?.[edge.id] ?? 0
       if (minimum >= 0 && minimum < (edge.operationalCapacity ?? edge.capacity)) {
         changes.push({ scope: "EDGE", targetId: edge.id, parameter: "capacity", previousValue: edge.operationalCapacity ?? edge.capacity, proposedValue: minimum })
@@ -51,7 +72,8 @@ export function generateCandidates(input: OptimizationInput): OptimizationCandid
   }
   if (input.allowThroughputChange) {
     for (const node of input.graph.nodes.slice().sort((a, b) => compareIds(a.id, b.id))) {
-      if (locked.has(node.id) || node.throughputCapacity === null || node.throughputCapacity === undefined) continue
+      if (locked.has(node.id) || (input.controllableNodes && !input.controllableNodes.includes(node.id))
+        || node.throughputCapacity === null || node.throughputCapacity === undefined) continue
       const minimum = input.minimumThroughput?.[node.id] ?? 0
       if (minimum >= 0 && minimum < node.throughputCapacity) {
         changes.push({ scope: "NODE", targetId: node.id, parameter: "throughput_capacity", previousValue: node.throughputCapacity, proposedValue: minimum })
@@ -81,16 +103,36 @@ export function optimizeSimulation(
   const feasible = evaluations.filter((evaluation) => evaluation.feasible && evaluation.simulation !== null)
   const rejected = evaluations.filter((evaluation) => !evaluation.feasible || evaluation.simulation === null)
   if (feasible.length === 0) {
-    return { status: "NO_FEASIBLE_CANDIDATES", ranked: [], rejected, weights, solver: solver instanceof DeterministicFallbackSolver ? "DETERMINISTIC_FALLBACK" : "EXTERNAL_ADAPTER" }
+    const rejectionReasons = summarizeRejections(rejected)
+    return {
+      status: "NO_FEASIBLE_CANDIDATES", ranked: [], rejected, weights,
+      solver: solver instanceof DeterministicFallbackSolver ? "DETERMINISTIC_FALLBACK" : "EXTERNAL_ADAPTER",
+      reason: rejected.some((candidate) => candidate.simulation !== null) ? "NO_FEASIBLE_CANDIDATE" : "ALL_SIMULATIONS_FAILED",
+      diagnostics: { rejectedCount: rejected.length, rejectionReasons },
+      constraintsSummary: { rejectedCount: rejected.length, rejectionReasons },
+      objectiveSummary: { weights, candidateObjectives: Object.fromEntries(rejected.map((candidate) => [candidate.candidateId, candidate.objective])) },
+    }
   }
   const normalized = normalizeObjectives(feasible, weights)
   normalized.sort((a, b) => (a.objective ?? Number.POSITIVE_INFINITY) - (b.objective ?? Number.POSITIVE_INFINITY) || compareIds(a.candidateId, b.candidateId))
+  normalized.forEach((evaluation, index) => { evaluation.rank = index + 1 })
+  const rejectionReasons = summarizeRejections(rejected)
   return {
     status: "COMPLETED",
     ranked: normalized,
     rejected,
     weights,
     solver: solver instanceof DeterministicFallbackSolver ? "DETERMINISTIC_FALLBACK" : "EXTERNAL_ADAPTER",
+    ranking: normalized.map((evaluation) => evaluation.candidateId),
+    diagnostics: { rejectedCount: rejected.length, rejectionReasons },
+    constraintsSummary: { rejectedCount: rejected.length, rejectionReasons },
+    objectiveSummary: { weights, candidateObjectives: Object.fromEntries(normalized.map((candidate) => [candidate.candidateId, candidate.objective])) },
+  }
+
+  function summarizeRejections(rejected: CandidateEvaluation[]): Record<string, number> {
+    const reasons: Record<string, number> = {}
+    for (const evaluation of rejected) for (const reason of evaluation.rejectionReasons) reasons[reason] = (reasons[reason] ?? 0) + 1
+    return reasons
   }
 }
 
@@ -100,6 +142,7 @@ function evaluateCandidate(candidate: OptimizationCandidate, input: Optimization
     return { candidateId: candidate.id, feasible: false, rejectionReasons, objective: null, metrics: null, simulation: null }
   }
   const graph = new VenueGraph(input.graph)
+  const demandChanges = candidate.changes.filter((change) => change.parameter === "demand_share")
   const sandbox: SandboxInput = {
     graph: graph.toJSON(),
     crowd: input.crowd,
@@ -111,6 +154,20 @@ function evaluateCandidate(candidate: OptimizationCandidate, input: Optimization
       ...(change.parameter === "capacity" ? { capacity: Number(change.proposedValue) } : {}),
       ...(change.parameter === "throughput_capacity" ? { throughputCapacity: Number(change.proposedValue) } : {}),
     })),
+    scenario: demandChanges.length === 0 ? undefined : {
+      id: `${candidate.id}_SCENARIO`,
+      name: candidate.id,
+      baseline: "CURRENT_GRAPH",
+      startTime: "1970-01-01T00:00:00Z",
+      duration: input.parameters?.durationSeconds ?? 0,
+      stepSeconds: input.parameters?.timestepSeconds,
+      interventions: demandChanges.map((change) => ({
+        parameter: "demand_share" as const,
+        targetType: "NODE" as const,
+        targetId: change.targetId,
+        proposedValue: Number(change.proposedValue),
+      })),
+    },
   }
   const simulation = runSandbox(sandbox)
   const metrics = outcomeMetrics(simulation)
@@ -124,10 +181,15 @@ function validateCandidate(candidate: OptimizationCandidate, input: Optimization
   const excluded = new Set(input.excludedEntities ?? [])
   const statusChanges = candidate.changes.filter((change) => change.parameter === "status").length
   if (input.maxStatusChanges !== undefined && statusChanges > input.maxStatusChanges) reasons.push("CHANGE_BUDGET_EXCEEDED")
+  if (input.maxParameterChanges !== undefined && candidate.changes.length > input.maxParameterChanges) reasons.push("CHANGE_BUDGET_EXCEEDED")
   for (const change of candidate.changes) {
     if (locked.has(change.targetId)) reasons.push("DISRUPTION_LOCKED")
     if (operatorLocked.has(change.targetId)) reasons.push("OPERATOR_LOCKED")
     if (excluded.has(change.targetId)) reasons.push("EXCLUDED_ENTITY")
+    const appliedKey = `${change.scope}:${change.targetId}:${change.parameter}`
+    if (input.disruptionAppliedValues?.[appliedKey] !== undefined) {
+      if (input.disruptionAppliedValues[appliedKey] !== change.proposedValue) reasons.push("DISRUPTION_APPLIED_VALUE_LOCKED")
+    }
     const entity = change.scope === "NODE"
       ? input.graph.nodes.find((node) => node.id === change.targetId)
       : input.graph.edges.find((edge) => edge.id === change.targetId)
@@ -136,8 +198,20 @@ function validateCandidate(candidate: OptimizationCandidate, input: Optimization
       continue
     }
     if (change.parameter === "throughput_capacity" && change.scope !== "NODE") reasons.push("INVALID_PARAMETER")
+    if (change.parameter === "demand_share") {
+      if (change.scope !== "NODE" || !(input.graph.activeEntries ?? []).includes(change.targetId)) reasons.push("DEMAND_SHARE_INVALID")
+      const share = typeof change.proposedValue === "number" ? change.proposedValue : Number.NaN
+      if (!Number.isFinite(share) || share < 0 || share > 1) reasons.push("DEMAND_SHARE_INVALID")
+      continue
+    }
+    if (change.parameter === "status" && input.maxStatusChanges === 0) reasons.push("CHANGE_BUDGET_EXCEEDED")
+    if (change.parameter === "status") {
+      if (change.proposedValue !== "OPEN" && change.proposedValue !== "CLOSED") reasons.push("INVALID_STATUS")
+      continue
+    }
     const value = typeof change.proposedValue === "number" ? change.proposedValue : Number.NaN
     if (!Number.isFinite(value) || value < 0) reasons.push("CAPACITY_OUT_OF_BOUNDS")
+    if (change.scope === "NODE" && change.parameter === "capacity" && !Number.isInteger(value)) reasons.push("NON_INTEGER_CAPACITY")
     const current = change.parameter === "throughput_capacity"
       ? input.graph.nodes.find((node) => node.id === change.targetId)?.throughputCapacity
       : entity.operationalCapacity ?? entity.capacity
@@ -147,10 +221,17 @@ function validateCandidate(candidate: OptimizationCandidate, input: Optimization
       : input.minimumCapacity?.[change.targetId]
     if (minimum !== undefined && value < minimum) reasons.push("CAPACITY_OUT_OF_BOUNDS")
   }
+  const demandChanges = candidate.changes.filter((change) => change.parameter === "demand_share")
+  if (demandChanges.length > 0) {
+    const entries = (input.graph.activeEntries ?? []).slice().sort(compareIds)
+    if (demandChanges.length !== entries.length || Math.abs(demandChanges.reduce((sum, change) => sum + Number(change.proposedValue), 0) - 1) > 1e-9
+      || demandChanges.some((change) => !entries.includes(change.targetId))) reasons.push("DEMAND_SHARE_INVALID")
+  }
   if (reasons.length > 0) return [...new Set(reasons)].sort(compareIds)
   const candidateGraph = new VenueGraph(input.graph).withOverrides(candidate.changes.map((change) => ({
     scope: change.scope,
     targetId: change.targetId,
+    ...(change.parameter === "status" ? { status: change.proposedValue as "OPEN" | "CLOSED" } : {}),
     ...(change.parameter === "capacity" ? { capacity: Number(change.proposedValue) } : {}),
     ...(change.parameter === "throughput_capacity" ? { throughputCapacity: Number(change.proposedValue) } : {}),
   })))

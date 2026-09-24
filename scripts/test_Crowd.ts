@@ -16,7 +16,7 @@ const graph: VenueGraphInput = {
     { id: "ENTRY", label: "Entry", type: "ENTRANCE", capacity: 5000, throughputCapacity: null, status: "OPEN" },
     { id: "HALL", label: "Hall", type: "ZONE", capacity: 300, throughputCapacity: 120, status: "OPEN" },
     { id: "GATE", label: "Gate", type: "CHECKPOINT", capacity: 80, throughputCapacity: 30, status: "OPEN" },
-    { id: "ALT", label: "Alternate", type: "CORRIDOR", capacity: 150, throughputCapacity: 90, status: "OPEN" },
+    { id: "ALT", label: "Alternate", type: "TRANSIT", capacity: 150, throughputCapacity: 90, status: "OPEN" },
     { id: "EXIT", label: "Exit", type: "EXIT", capacity: 5000, throughputCapacity: null, status: "OPEN" },
   ],
   edges: [
@@ -98,8 +98,8 @@ function displayResult(result: SimulationResult): void {
   const metrics = result.final.nodeMetrics
   console.log("\n=== SIMULATION RESULT ===")
   console.log(`Scenario: ${result.scenarioId}  Status: ${result.status}`)
-  console.log(`Initial population: ${result.metrics.population + result.arrivedPopulation}`)
-  console.log(`Completed: ${result.arrivedPopulation}  Remaining: ${result.finalState.population}  Stranded: ${result.strandedPopulation}`)
+  console.log(`Initial population: ${result.metrics.population}`)
+  console.log(`Completed: ${result.arrivedPopulation}  Remaining / Not arrived: ${result.strandedPopulation}`)
   console.log(`Peak queue: ${result.metrics.peakQueue}  Peak congestion: ${result.metrics.peakCongestion.toFixed(3)}`)
   console.log(`Average travel: ${result.metrics.travelTime.toFixed(2)}s  Estimated delay: ${result.estimatedDelaySeconds.toFixed(2)}s`)
   console.log(`Bottlenecks: ${result.bottlenecks.join(", ") || "none"}`)
@@ -163,7 +163,11 @@ async function determinism(inputScenario: SandboxInput): Promise<void> {
 async function customScenario(rl: ReturnType<typeof createInterface>): Promise<SandboxInput> {
   const population = await numberPrompt(rl, "Population", 100)
   const duration = await numberPrompt(rl, "Duration seconds", 120)
-  const capacity = await numberPrompt(rl, "Gate capacity", 30)
+  const capacity = await numberPrompt(rl, "Gate exit edge capacity (people/minute)", 30)
+  return customScenarioInput(population, duration, capacity)
+}
+
+function customScenarioInput(population: number, duration: number, capacity: number): SandboxInput {
   return {
     ...scenarioInput("custom", population),
     graphOverrides: [{ scope: "EDGE", targetId: "GATE_EXIT", capacity }],
@@ -179,10 +183,10 @@ async function numberPrompt(rl: ReturnType<typeof createInterface>, label: strin
 }
 
 async function runStress(): Promise<void> {
-  console.log("\nPOPULATION | COMPLETED | REMAINING | STRANDED | PEAK_QUEUE | AVG_TRAVEL")
+  console.log("\nPOPULATION | COMPLETED | NOT_ARRIVED | PEAK_QUEUE | AVG_TRAVEL")
   for (const population of [100, 250, 500, 1000, 2000, 5000]) {
     const result = runSandbox(scenarioInput(`stress-${population}`, population))
-    console.log(`${String(population).padStart(10)} | ${String(result.arrivedPopulation).padStart(9)} | ${String(result.finalState.population).padStart(9)} | ${String(result.strandedPopulation).padStart(8)} | ${String(result.metrics.peakQueue).padStart(10)} | ${result.metrics.travelTime.toFixed(2).padStart(10)}`)
+    console.log(`${String(population).padStart(10)} | ${String(result.arrivedPopulation).padStart(9)} | ${String(result.strandedPopulation).padStart(10)} | ${String(result.metrics.peakQueue).padStart(10)} | ${result.metrics.travelTime.toFixed(2).padStart(10)}`)
   }
 }
 
@@ -200,6 +204,16 @@ async function main(): Promise<void> {
     const result = runSandbox(preset(process.argv[3] ?? "1") ?? scenarioInput("normal", 100))
     displayResult(result)
     if (process.argv.includes("--export")) await writeFile("test_Crowd.latest.json", JSON.stringify(serializeSimulationResult(result), null, 2), "utf8")
+    return
+  }
+  if (command === "--custom") {
+    const population = Number(process.argv[3] ?? 100)
+    const duration = Number(process.argv[4] ?? 120)
+    const capacity = Number(process.argv[5] ?? 30)
+    if (![population, duration, capacity].every((value) => Number.isFinite(value) && value >= 0)) {
+      throw new Error("Custom population, duration, and capacity must be finite and >= 0")
+    }
+    displayResult(runSandbox(customScenarioInput(population, duration, capacity)))
     return
   }
   if (command === "--compare") {
