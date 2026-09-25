@@ -29,3 +29,7 @@ backend/.env
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# P1→P3 transport local state (never commit queue contents or secrets)
+.p3-queue.jsonl
+.env

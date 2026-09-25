@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:crowd": "tsx scripts/test_Crowd.ts",
+    "push:p3": "tsx scripts/pushToP3.ts",
     "preview": "vite preview"
   },
   "dependencies": {

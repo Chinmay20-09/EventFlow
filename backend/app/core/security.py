@@ -9,11 +9,17 @@ identity is currently supplied through a development header:
 The server resolves the identity **and the role** from the stored `users` table.
 The client can never assert its own role, and approval requests must not carry
 an `approved_by` value (EV-023 §4).
+
+P1 service identity (P1_BACKEND_INTEGRATION_REQUIREMENTS §14) is separate from
+frontend user authentication: `verify_p1_api_key` checks a shared bearer token
+on /api/internal/* from the `P3_API_KEY` setting. Empty setting = disabled
+(hackathon default, previous behavior).
 """
 
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.errors import AppError
 from app.db.session import get_db
 from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, User
@@ -51,3 +57,17 @@ def get_current_operator(user: User = Depends(get_current_user)) -> User:
     if user.role not in (ROLE_ORGANIZER, ROLE_COORDINATOR):
         raise AppError("FORBIDDEN", "Organizer or Coordinator role required", 403)
     return user
+
+
+def verify_p1_api_key(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> None:
+    """Shared-key service identity for the P1 ingestion endpoints.
+
+    `Authorization: Bearer <P3_API_KEY>`. The mechanism is simple on purpose
+    (hackathon MVP); it is distinct from the X-User-Id user-identity header.
+    """
+    if not settings.p3_api_key:
+        return  # Disabled — development default; identity decision still open.
+    if authorization != f"Bearer {settings.p3_api_key}":
+        raise AppError("UNAUTHORIZED", "Valid P1 service key required", 401)

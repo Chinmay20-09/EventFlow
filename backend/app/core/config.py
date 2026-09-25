@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # EV-015 §7: the MVP allows a maximum of two simulation attempts.
     max_simulation_attempts: int = 2
 
+    # Shared P1→P3 service identity (P1_BACKEND_INTEGRATION_REQUIREMENTS §14).
+    # Empty disables authentication on /api/internal/* (previous behavior);
+    # set the SAME value on both sides (P3_API_KEY in the P1 transport env).
+    p3_api_key: str = ""
+
 
 settings = Settings()
 

@@ -16,12 +16,13 @@ P1 string IDs are preserved (mapped through `nodes.external_id`).
 
 from datetime import timezone
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.api.routes.events import get_event_or_404
 from app.core.errors import AppError, ok
+from app.core.security import verify_p1_api_key
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.models.graph import Node
@@ -31,7 +32,7 @@ from app.schemas.strategy import SimulationStartOut
 from app.services import workflow
 from app.utils import utcnow
 
-router = APIRouter(prefix="/api", tags=["p1-integration"])
+router = APIRouter(prefix="/api", tags=["p1-integration"], dependencies=[Depends(verify_p1_api_key)])
 
 
 def _resolve_p1_node(db, event_id: int, p1_node_id: str) -> Node | None:

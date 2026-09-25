@@ -337,3 +337,33 @@ all-questions document with no confirmed answers):
 7. **`predicted_metrics` untouched.** Simulation ingestion stores P1's result
    in `p1_result` but leaves `predicted_metrics` `NULL` — P1's simulation
    metrics are scenario results, not P2 predictions.
+
+## 8. Runtime P1 → P3 transport (p3-p1-integration)
+
+The missing runtime connection is now implemented on the P1 side —
+`src/transport/` (see its README for the full mapping table). P1 remains a
+pure calculation library: the transport is the only place where the engine
+meets HTTP.
+
+- **Endpoints used (unchanged):** `POST /api/internal/crowd-state` and
+  `POST /api/internal/simulations`, with request bodies built field-for-field
+  by P1's own serializers (`serializeMetric` — now exported, unchanged — and
+  `serializeSimulationResult`). No second schema, no P3-side changes to the
+  ingestion contracts.
+- **Auth (resolves open question 6 for the MVP):** optional shared bearer
+  key. `P3_API_KEY` set on the backend makes `/api/internal/*` require
+  `Authorization: Bearer <P3_API_KEY>` (`app/core/security.py::
+  verify_p1_api_key`); empty (default) keeps the previous unauthenticated
+  behavior. The P1 transport reads the same variable name (`P3_API_KEY`,
+  `src/transport/p3Config.ts`). No secret is committed.
+- **Delivery semantics:** bounded exponential-backoff retries (network/5xx
+  only — 4xx is never retried), then the payload is appended to a local
+  JSONL queue on the P1 side (`.p3-queue.jsonl`, git-ignored). A P3 outage
+  can never stop the P1 engine; the client never throws.
+- **Throttle:** live crowd-state snapshots are latest-wins batched to at
+  most one POST per `P3_CROWD_STATE_MIN_INTERVAL_MS` (default 2 s).
+  Simulation results are sent only on the completed-result boundary.
+- **Unresolved questions 1–2 remain unresolved by design:** the transport
+  requires `event_id` / `strategy_set_id` to be supplied explicitly (env /
+  CLI flag); it never derives `strategy_set_id` from P1's opaque
+  `strategy_id`/`scenario_id` strings.
