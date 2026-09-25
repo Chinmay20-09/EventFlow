@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String
+from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,11 +17,17 @@ class Node(Base):
     """
 
     __tablename__ = "nodes"
+    # P1 string node IDs are unique within an event only (src/engine/types.ts:
+    # VenueGraphInput has no global ID scope).
+    __table_args__ = (UniqueConstraint("event_id", "external_id", name="uq_nodes_event_external"),)
 
     node_id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(
         ForeignKey("events.event_id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # P1 Crowd Engine string ID (e.g. "HALL") preserved verbatim. P3 never
+    # rewrites it — P1 payloads reference nodes through this mapping.
+    external_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     type: Mapped[str] = mapped_column(String(40), nullable=False)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -65,6 +65,9 @@ class SimulationResultOut(BaseModel, OrmModel):
     conflicts: list = []
     # Structured P1 outcome (mock-backed until P1 confirms the shape).
     predicted_metrics: dict | None = None
+    # Verbatim P1 serializeSimulationResult payload when the result was
+    # ingested through POST /api/internal/simulations (simulation-only data).
+    p1_result: dict | None = None
     created_at: datetime
 
 

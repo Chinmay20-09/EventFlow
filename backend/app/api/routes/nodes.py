@@ -27,8 +27,25 @@ def create_node(event_id: int, payload: NodeCreate, db: DbSession) -> dict:
     from app.api.routes.events import get_event_or_404
 
     get_event_or_404(db, event_id)
+
+    # P1 ID mapping must be unambiguous within the event — reject duplicates
+    # before they hit the unique constraint.
+    if payload.external_id is not None:
+        taken = db.execute(
+            select(Node).where(
+                Node.event_id == event_id, Node.external_id == payload.external_id
+            )
+        ).scalar_one_or_none()
+        if taken is not None:
+            raise AppError(
+                "VALIDATION_ERROR",
+                f"external_id {payload.external_id!r} is already mapped in this event",
+                422,
+            )
+
     node = Node(
         event_id=event_id,
+        external_id=payload.external_id,
         name=payload.name,
         type=payload.type,
         latitude=payload.latitude,

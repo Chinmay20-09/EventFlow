@@ -20,6 +20,7 @@ from app.api.routes import (
     events,
     health,
     nodes,
+    p1,
     predictions,
     strategy_sets,
 )
@@ -61,6 +62,7 @@ for router in (
     events.router,
     nodes.router,
     crowd.router,
+    p1.router,
     disruptions.router,
     predictions.router,
     strategy_sets.router,

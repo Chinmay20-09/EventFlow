@@ -88,6 +88,10 @@ class SimulationResult(Base):
     # Optional structured simulation outcome as supplied by P1 (mock-backed
     # until the real P1 engine confirms the shape — P3 never computes it).
     predicted_metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Verbatim P1 serializeSimulationResult payload (snake_case) ingested via
+    # POST /api/internal/simulations. Stored as-is — including nulls — and
+    # exposed only through the simulation-result endpoint (never live state).
+    p1_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 

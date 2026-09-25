@@ -119,6 +119,73 @@ def request_simulation(db: Session, strategy_set_id: int) -> tuple[StrategySet, 
     return strategy_set, result
 
 
+def record_external_simulation(
+    db: Session, strategy_set_id: int, *, p1_payload: dict
+) -> tuple[StrategySet, SimulationResult, bool]:
+    """Store a P1-produced simulation result for a Strategy Set.
+
+    The P1 → P3 ingestion counterpart of `request_simulation`: the result
+    arrives fully computed (POST /api/internal/simulations) and is stored
+    VERBATIM in `SimulationResult.p1_result` — P3 calculates nothing
+    (EV-003 §10, EV-016 §20).
+
+    - Same state machine: PROPOSED/FAILED/SIMULATED → SIMULATING → SIMULATED,
+      MAX_SIMULATION_ATTEMPTS enforced, no auto-approval, no execution.
+    - Idempotent by P1 result id: re-delivering the same serialized result
+      returns the stored row without consuming another attempt.
+    - `status` is P1's `SimulationStatus` verbatim; `predicted_metrics` is
+      left untouched (simulation metrics are not predictions).
+
+    Returns (strategy_set, result, duplicate).
+    """
+    strategy_set = get_strategy_set_or_404(db, strategy_set_id)
+    p1_result_id = p1_payload["id"]
+    p1_status = p1_payload["status"]
+
+    # Idempotency: the P1 result id is deterministic for identical input
+    # (src/engine/sandbox.ts), so it is the duplicate-detection key.
+    if strategy_set.simulation_result_id is not None:
+        existing = db.get(SimulationResult, strategy_set.simulation_result_id)
+        if (
+            existing is not None
+            and existing.p1_result is not None
+            and existing.p1_result.get("id") == p1_result_id
+        ):
+            return strategy_set, existing, True
+
+    if strategy_set.attempt_count >= settings.max_simulation_attempts:
+        raise AppError(
+            "INVALID_STATE",
+            f"Maximum simulation attempts reached ({settings.max_simulation_attempts})",
+            409,
+        )
+
+    _transition(strategy_set, "SIMULATING")
+    commit_or_fail(db)
+
+    result = SimulationResult(
+        strategy_set_id=strategy_set.strategy_set_id,
+        # P1's SimulationStatus stored verbatim — never remapped by P3.
+        status=p1_status,
+        # Neutral label composed only of stored P1 values (no summary is
+        # invented — P1 produces no summary field).
+        result_summary=f"P1 simulation {p1_result_id} ({p1_status})",
+        conflicts=[],  # P1 has no conflicts concept; bottlenecks stay in p1_result
+        predicted_metrics=None,
+        p1_result=p1_payload,
+    )
+    db.add(result)
+    db.flush()  # assign simulation_result_id
+
+    strategy_set.simulation_result_id = result.simulation_result_id
+    strategy_set.attempt_count += 1
+    strategy_set.failure_reason = None
+    _transition(strategy_set, "SIMULATED")
+    commit_or_fail(db)
+
+    return strategy_set, result, False
+
+
 def approve(
     db: Session, strategy_set_id: int, coordinator: User
 ) -> tuple[StrategySet, bool]:

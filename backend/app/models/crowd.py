@@ -7,7 +7,7 @@ validated current state.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,4 +25,7 @@ class CrowdState(Base):
         ForeignKey("nodes.node_id", ondelete="CASCADE"), nullable=False, unique=True
     )
     current_crowd: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Verbatim P1 CapacityMetric (snake_case, src/engine/serialization.ts
+    # serializeMetric). Nulls stay null — P3 never fills them in.
+    p1_metric: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

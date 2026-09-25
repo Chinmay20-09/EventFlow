@@ -248,3 +248,92 @@ persisted; delete either input and the alert disappears).
 | execution failed | "Execution failed for strategy set #{id}" | `alert` |
 
 Only these stored rows appear — the timeline never invents entries.
+
+## 5. P1 → P3 Integration Boundary (p3-p1-integration branch)
+
+The P1 Crowd Engine was brought into this branch **as-is** (TypeScript library,
+no HTTP layer): `src/engine/*`, `tests/engine.test.ts`, `scripts/test_Crowd.ts`
+(staged from the `Crowd-Engine` branch). No frontend, documentation or
+unrelated package changes were merged. P1 is exercised with `npm test`
+(vitest) and `npm run test:crowd -- --scenario|--compare|--determinism`
+(non-interactive flags; no stdin required).
+
+Because P1 has no server of its own, the integration boundary is **push
+ingestion over HTTP into the existing FastAPI app** — P1's own explicit
+P3-facing serializers in `src/engine/serialization.ts` (`serializeMetric`,
+`serializeSimulationResult`, snake_case) define the wire contract, and
+`backend/app/schemas/p1.py` validates exactly that shape (closed unions from
+`src/engine/types.ts`, `extra="forbid"`). No P1 calculation is duplicated in
+Python — every stored value is a verbatim copy of a P1 value.
+
+Endpoints (registered in `app/main.py`, implemented in `app/api/routes/p1.py`):
+
+- `POST /api/internal/crowd-state` — current snapshot (list of `CapacityMetric`).
+  All-or-nothing: every P1 node id must resolve and be unique before any write;
+  then a single upsert per node (EV-005 §7). `crowd_state.current_crowd` is a
+  field copy of `current_occupancy`; the full metric is stored in
+  `crowd_state.p1_metric`.
+- `POST /api/internal/simulations` — full `serializeSimulationResult` payload,
+  stored verbatim in `simulation_results.p1_result` through the existing
+  workflow state machine (`services/workflow.py::record_external_simulation`):
+  same attempt limit, no auto-approval, no execution, P1's `SimulationStatus`
+  preserved unchanged. Idempotent by P1 result id.
+
+What P3 deliberately does **not** do: recalculate crowd/occupancy/density/
+flow/queue/bottleneck/travel-time, invent movement or history data, decide
+staleness (freshness is exposed as `updated_at`), remap P1 ids or statuses,
+or auto-approve/execute anything.
+
+## 6. Database additions for P1 integration
+
+Only three columns were added — no new tables, no changes to P4 semantics:
+
+| Table | Column | Type | Meaning |
+|---|---|---|---|
+| `nodes` | `external_id` | `VARCHAR(80) NULL` | P1 string node id, unique per event (`uq_nodes_event_external`) |
+| `crowd_state` | `p1_metric` | `JSON NULL` | verbatim `serializeMetric` payload; `NULL` until P1 sends data |
+| `simulation_results` | `p1_result` | `JSON NULL` | verbatim `serializeSimulationResult` payload |
+
+Live crowd (`crowd_state`) stays separate from simulation results
+(`simulation_results`); dashboard/live endpoints never read `p1_result`, and
+`GET /api/strategy-sets/{id}/simulation` never reads `p1_metric`. Missing P1
+data stays `NULL` — it is never converted to `0`. Bootstrap remains
+`Base.metadata.create_all` (existing behaviour).
+
+## 7. P1 node-id mapping and unresolved questions
+
+**Node-id resolution** (`p1.py::_resolve_p1_node`), in order:
+
+1. exact `nodes.external_id` match within the event (explicit mapping via
+   `POST /api/events/{id}/nodes {"external_id": "HALL"}`),
+2. an all-digit P1 id is treated as the P3 integer `node_id` (P1 accepts any
+   string ids, so P3 ids may be used by P1 directly).
+
+Anything else is `VALIDATION_ERROR` (422) and the whole snapshot is rejected.
+
+**Unresolved questions** (documented, not invented — see
+`Crowd-Engine:backend/P1_BACKEND_INTEGRATION_REQUIREMENTS.md`, which is an
+all-questions document with no confirmed answers):
+
+1. **No event id in P1 output.** `CapacityMetric`/`SimulationResult` carry no
+   event id, so `event_id` (and `strategy_set_id` for simulations) are P3-side
+   envelope fields in the request body. P1 must confirm event identity if it
+   ever becomes part of its own contract.
+2. **`scenario_id`/`strategy_id` vs P3 ids.** P1's ids are opaque strings with
+   no established mapping to P3 integer `strategy_set_id`s; the link is an
+   explicit envelope field, never inferred.
+3. **Freshness/staleness rule.** P1 provides no interval, `is_stale` or
+   sequence metadata. P3 exposes `updated_at`/`created_at` only; the staleness
+   threshold is a P1/P3 decision still open.
+4. **Flow/movement contract.** `serializeMetric` has no edge-flow payload for
+   *current* state (edge metrics exist only inside simulation timelines), so
+   no current movement data is stored or exposed.
+5. **History/retention.** `crowd_state` holds only the latest row per node
+   (EV-005 §7). Whether P3 must store history is unconfirmed (§6 of the P1
+   requirements doc).
+6. **Auth for the internal endpoints.** The existing `/api/internal/*`
+   endpoints are unauthenticated (pre-existing P4 decision); P1 service
+   identity remains undecided (requirements §14).
+7. **`predicted_metrics` untouched.** Simulation ingestion stores P1's result
+   in `p1_result` but leaves `predicted_metrics` `NULL` — P1's simulation
+   metrics are scenario results, not P2 predictions.

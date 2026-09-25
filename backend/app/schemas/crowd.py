@@ -14,6 +14,9 @@ class CrowdOut(BaseModel, OrmModel):
     node_id: int
     current_crowd: int = Field(ge=0)
     updated_at: datetime
+    # Verbatim P1 CapacityMetric when the value arrived through the P1
+    # ingestion endpoint; null when no P1 payload has been received.
+    p1_metric: dict | None = None
 
 
 class CrowdIngestIn(BaseModel):
