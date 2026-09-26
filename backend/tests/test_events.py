@@ -104,3 +104,32 @@ def test_event_state_not_found(client):
     response = client.get("/api/events/999999/state")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_custom_input_roundtrip_unique_value(client):
+    """Custom Input feature (backend half): POST stores, GET returns the value.
+
+    Proves P3 → PostgreSQL → P3 with a unique marker — the same flow the P4
+    UI performs (UI → POST /api/events → PostgreSQL → GET /api/events/{id}).
+    """
+    marker = "EV-CUSTOM-INPUT-001"
+
+    created = client.post(
+        "/api/events",
+        json={
+            "name": marker,
+            "start_time": "2026-10-10T10:00:00Z",
+            "end_time": "2026-10-10T22:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["name"] == marker
+    event_id = created.json()["data"]["event_id"]
+
+    fetched = client.get(f"/api/events/{event_id}")
+    assert fetched.status_code == 200
+    data = fetched.json()["data"]
+    assert data["event_id"] == event_id
+    assert data["name"] == marker  # the unique value came back from storage
+    assert data["status"] == "ACTIVE"
+    assert data["start_time"] is not None and data["end_time"] is not None

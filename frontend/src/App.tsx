@@ -1,4 +1,40 @@
 import { useEffect, useState } from "react"
+import CustomInputDialog from "./CustomInputDialog"
+import type { StoredEvent } from "./api"
+
+// Custom Input feature: stored backend record displayed on the Overview page
+// (fetched from P3 — the database is the source of truth, never local state).
+function StoredCustomInputCard({
+  themeClasses,
+  record,
+}: {
+  themeClasses: (classes: string) => string
+  record: StoredEvent | null
+}) {
+  if (!record) {
+    return null
+  }
+
+  return (
+    <div className={themeClasses("mt-6 bg-slate-900 border border-slate-800 rounded-xl p-6")}>
+      <p className={themeClasses("text-blue-400 text-sm font-medium")}>CUSTOM INPUT</p>
+      <h3 className={themeClasses("text-xl font-semibold mt-1")}>Stored custom event data</h3>
+      <p className={themeClasses("text-sm text-slate-400 mt-1")}>
+        Fetched back from the EventFlow backend (PostgreSQL is the source of truth).
+      </p>
+
+      <div className={themeClasses("mt-4 bg-slate-800/60 rounded-xl p-5 space-y-2")}>
+        <p className={themeClasses("text-lg font-semibold")}>
+          #{record.event_id} — {record.name}
+        </p>
+        <p className={themeClasses("text-sm text-slate-300")}>Status: {record.status}</p>
+        <p className={themeClasses("text-sm text-slate-300")}>
+          {record.start_time} → {record.end_time}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 function App() {
   const [isDark, setIsDark] = useState(true)
@@ -20,6 +56,9 @@ function App() {
   const [password, setPassword] = useState("")
   const [loginError, setLoginError] = useState("")
   const [selectedNode, setSelectedNode] = useState("A")
+  // Custom Input feature: the last record stored via P3 and re-fetched from
+  // the backend (PostgreSQL is the source of truth — never submit-time state).
+  const [storedCustomInput, setStoredCustomInput] = useState<StoredEvent | null>(null)
 
   const themeClasses = (classes: string) => {
     const addThemeTransition = (value: string) =>
@@ -414,6 +453,14 @@ Transit: ${transitCapacity}%
   >
     Open Sandbox
   </button>
+
+  {/* Custom Input feature: opens the modal that POSTs to P3, then GETs the
+      stored record back and lifts it into the dashboard state. */}
+  <CustomInputDialog
+    themeClasses={themeClasses}
+    isDark={isDark}
+    onStored={setStoredCustomInput}
+  />
 
   <div className={themeClasses("relative")}>
     <button className={themeClasses("p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xl")}>
@@ -1224,7 +1271,10 @@ Transit: ${transitCapacity}%
 
         </div>
 
-          </>
+        {/* Custom Input feature: the record stored via P3 and re-fetched from
+            the backend (PostgreSQL is the source of truth). */}
+        <StoredCustomInputCard themeClasses={themeClasses} record={storedCustomInput} />
+      </>
         )}
 
 

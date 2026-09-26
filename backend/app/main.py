@@ -6,6 +6,7 @@ strategy results — those arrive from P1/P2 through validated inputs.
 """
 
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,9 +53,20 @@ app = FastAPI(
 )
 
 # Allow the P4 development frontend.
+# vite may shift to the next free port (5174, 5175, ...) when 5173 is taken,
+# and browsers treat 127.0.0.1 as a different origin from localhost — so the
+# allow-list covers the standard dev loopback variants. Deployments set
+# CORS_EXTRA_ORIGINS for their real P4 origin instead of editing this file.
+_extra = [o.strip() for o in os.getenv("CORS_EXTRA_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        *_extra,
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
