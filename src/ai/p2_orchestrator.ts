@@ -1,34 +1,8 @@
-/**
- * P2 AI — Orchestrator
- *
- * Responsibility:
- * - Coordinate the complete P2 intelligence flow.
- * - Detect organizer intent.
- * - Build AI context.
- * - Select candidate strategies.
- * - Invoke the LLM.
- * - Apply guardrails.
- * - Call approved P1 tools when required.
- * - Interpret P1 results.
- *
- * IMPORTANT:
- * P2 does NOT perform simulation calculations.
- * P1 remains the authoritative simulation engine.
- */
-
 import { detectIntent } from "./intent";
-import type { IntentResult } from "./intent";
 
 import {
   createAIContext,
   addToolResult,
-} from "./context";
-
-import type {
-  AIContext,
-  EventContext,
-  ConfiguredConstraints,
-  ConversationContext,
 } from "./context";
 
 import {
@@ -37,20 +11,27 @@ import {
 
 import {
   P2LLMService,
-  MockLLMProvider,
+  GroqLLMProvider,
 } from "./llm";
 
 import {
-  validateAIAction,
   validateAIResponse,
 } from "../guardrails/ai_guardrails";
 
-import type {
-  P1SimulationContext,
-} from "../tools/p1_simulation_tool";
+import {
+  p2ToolRegistry,
+} from "../tools/tool_registry";
 
 import {
-  runBaselineSimulation,
+  getStrategyById,
+} from "../strategies/strategy_catalog";
+
+import type {
+  SimulationResult,
+} from "../engine/types";
+
+import type {
+  P1SimulationContext,
 } from "../tools/p1_simulation_tool";
 
 import {
@@ -62,616 +43,1248 @@ import type {
   AIResponse,
 } from "./response";
 
-// ============================================================
-// Types
-// ============================================================
+
+/* =========================================================
+   INPUT
+========================================================= */
 
 export interface P2OrchestratorInput {
   organizer_request: string;
 
   p1_context?: P1SimulationContext;
 
-  event?: EventContext;
+  event_data?: {
+    event_id?: string;
+    event_name?: string;
+    location?: string;
+  };
 
-  constraints?: ConfiguredConstraints;
+  constraints?: {
+    safe_capacity?: number;
+    restricted_zones?: string[];
+    emergency_routes?: string[];
+    mandatory_approval?: boolean;
+  };
 
-  conversation?: ConversationContext;
+  conversation?: {
+    previous_messages?: string[];
+    previous_strategy_id?: string;
+  };
 }
+
+
+/* =========================================================
+   RESULT
+========================================================= */
 
 export interface P2OrchestratorResult {
   success: boolean;
 
-  intent: IntentResult;
+  intent: string;
 
-  response?: AIResponse;
+  response?: string;
 
-  message: string;
-
-  context?: AIContext;
+  context?: ReturnType<typeof createAIContext>;
 
   error?: string;
+
+  message?: string;
 }
 
-// ============================================================
-// P2 Orchestrator
-// ============================================================
+
+/* =========================================================
+   P2 ORCHESTRATOR
+========================================================= */
 
 export class P2Orchestrator {
   private readonly llm: P2LLMService;
 
-  constructor(
-    llmService?: P2LLMService,
-  ) {
-    this.llm =
-      llmService ??
-      new P2LLMService(
-        new MockLLMProvider(),
+  constructor() {
+    const apiKey =
+      import.meta.env.VITE_GROQ_API_KEY;
+
+    if (!apiKey) {
+      throw new Error(
+        "VITE_GROQ_API_KEY is missing. Add it to your .env file."
       );
+    }
+
+    const provider =
+      new GroqLLMProvider(apiKey);
+
+    this.llm =
+      new P2LLMService(provider);
   }
 
-  // ----------------------------------------------------------
-  // Main Entry Point
-  // ----------------------------------------------------------
+
+  /* =======================================================
+     MAIN PROCESS
+  ======================================================= */
 
   async process(
-    input: P2OrchestratorInput,
+    input: P2OrchestratorInput
   ): Promise<P2OrchestratorResult> {
+
     const request =
       input.organizer_request.trim();
-
-    // ========================================================
-    // STEP 1 — Validate Request
-    // ========================================================
 
     if (!request) {
       return {
         success: false,
-
-        intent: {
-          intent: "unknown",
-          entities: {},
-          original_text: "",
-          confidence: "low",
-          requires_clarification: true,
-          clarification_question:
-            "What would you like me to analyze or do?",
-        },
-
-        message:
+        intent: "unknown",
+        error:
           "Organizer request cannot be empty.",
       };
     }
 
-    // ========================================================
-    // STEP 2 — Detect Intent
-    // ========================================================
+    try {
 
-    const intent =
-      detectIntent(request);
+      /* ---------------------------------------------------
+         1. Detect intent
+      --------------------------------------------------- */
 
-    // ========================================================
-    // STEP 3 — Build AI Context
-    // ========================================================
+      const intentResult =
+        detectIntent(request);
 
-    const context =
-      createAIContext(
-        request,
-        intent.intent,
-        intent.entities,
-      );
 
-    // Add optional event data
-    if (input.event) {
-      context.event_data =
-        input.event;
-    }
+      /* ---------------------------------------------------
+         2. Create AI context
+      --------------------------------------------------- */
 
-    // Add optional constraints
-    if (input.constraints) {
-      context.constraints =
-        input.constraints;
-    }
+      const context =
+        createAIContext(
+          request,
+          intentResult.intent,
+          intentResult.entities
+        );
 
-    // Add optional conversation context
-    if (input.conversation) {
-      context.conversation =
-        input.conversation;
-    }
 
-    // ========================================================
-    // STEP 4 — Handle Clarification
-    // ========================================================
+      /* ---------------------------------------------------
+         3. Event context
+      --------------------------------------------------- */
 
-    if (
-      intent.requires_clarification
-    ) {
-      return {
-        success: true,
-        intent,
-        context,
-        message:
-          intent.clarification_question ??
-          "I need more information to process this request.",
+      context.event_data = {
+        ...(input.event_data ?? {}),
+        organizer_request: request,
       };
+
+
+      /* ---------------------------------------------------
+         4. Constraints
+      --------------------------------------------------- */
+
+      if (input.constraints) {
+        context.constraints =
+          input.constraints;
+      }
+
+
+      /* ---------------------------------------------------
+         5. Conversation
+      --------------------------------------------------- */
+
+      if (input.conversation) {
+        context.conversation =
+          input.conversation;
+      }
+
+
+      /* ---------------------------------------------------
+         6. Clarification
+      --------------------------------------------------- */
+
+      if (
+        intentResult.requires_clarification
+      ) {
+
+        return {
+          success: true,
+
+          intent:
+            intentResult.intent,
+
+          response:
+            intentResult.clarification_question ??
+            "Could you provide more details about the request?",
+
+          context,
+        };
+
+      }
+
+
+      /* ---------------------------------------------------
+         7. Strategy selection
+      --------------------------------------------------- */
+
+      const strategySelection =
+        selectCandidateStrategies(
+          context
+        );
+
+
+      /* ---------------------------------------------------
+         8. Groq
+      --------------------------------------------------- */
+
+      const llmResponse =
+        await this.llm.generate(
+          context
+        );
+
+
+      /* ---------------------------------------------------
+         9. Baseline P1 analysis
+      --------------------------------------------------- */
+
+      if (
+        this.requiresBaselineAnalysis(
+          intentResult.intent
+        )
+      ) {
+
+        if (!input.p1_context) {
+
+          return {
+            success: false,
+
+            intent:
+              intentResult.intent,
+
+            response:
+              "This request requires P1 simulation data, but no P1 context was provided.",
+
+            context,
+          };
+
+        }
+
+
+        const baselineResponse =
+          this.runBaselineAnalysis(
+            input.p1_context,
+            context
+          );
+
+
+        if (!baselineResponse.success) {
+
+          return {
+            success: false,
+
+            intent:
+              intentResult.intent,
+
+            response:
+              baselineResponse.message,
+
+            context,
+          };
+
+        }
+
+      }
+
+
+      /* ---------------------------------------------------
+         10. Strategy request
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "request_strategy"
+      ) {
+
+        return this.handleStrategyRequest(
+          context,
+          strategySelection,
+          llmResponse
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         11. Strategy simulation
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "simulate_strategy"
+      ) {
+
+        return this.handleStrategySimulation(
+          context,
+          input.p1_context,
+          llmResponse
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         12. Comparison
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "compare_strategy"
+      ) {
+
+        return this.handleComparison(
+          context
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         13. Explanation
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "explain_result"
+      ) {
+
+        return this.handleExplanation(
+          context
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         14. Approval
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "approve_strategy"
+      ) {
+
+        return this.handleApproval(
+          context
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         15. Rejection
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "reject_strategy"
+      ) {
+
+        return this.handleRejection(
+          context
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         16. Execution
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "execute_strategy"
+      ) {
+
+        return this.handleExecution(
+          context
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         17. Generic AI response
+      --------------------------------------------------- */
+
+      const response: AIResponse = {
+
+        summary:
+          llmResponse.explanation ??
+          "Request processed by P2.",
+
+        findings:
+          llmResponse.reasoning ?? [],
+
+        recommendation:
+          llmResponse.reasoning?.join(" "),
+
+        warnings: [],
+
+        execution_status:
+          "not_executed",
+      };
+
+
+      return this.validateAndReturnResponse(
+        context,
+        response
+      );
+
+    } catch (error) {
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown P2 orchestration error.";
+
+      return {
+        success: false,
+
+        intent:
+          this.safeDetectIntent(request),
+
+        error: message,
+
+        message,
+      };
+
+    }
+  }
+
+
+  /* =======================================================
+     BASELINE ANALYSIS
+  ======================================================= */
+
+  private runBaselineAnalysis(
+    p1Context: P1SimulationContext,
+    context: ReturnType<
+      typeof createAIContext
+    >
+  ):
+    | {
+        success: true;
+        result: SimulationResult;
+      }
+    | {
+        success: false;
+        message: string;
+      } {
+
+    const toolResult =
+      p2ToolRegistry.runBaseline({
+        context: p1Context,
+      });
+
+
+    addToolResult(
+      context,
+      {
+        tool_name:
+          "run_baseline_simulation",
+
+        success:
+          toolResult.success,
+
+        summary:
+          toolResult.success
+            ? "P1 baseline simulation completed."
+            : "P1 baseline simulation failed.",
+
+        data:
+          toolResult.data,
+      }
+    );
+
+
+    if (!toolResult.success) {
+
+      return {
+        success: false,
+
+        message:
+          toolResult.error ??
+          "P1 baseline simulation failed.",
+      };
+
     }
 
-    // ========================================================
-    // STEP 5 — Strategy Selection
-    // ========================================================
 
-    const strategySelection =
-      selectCandidateStrategies(
-        context,
-      );
+    const result =
+      toolResult.data as SimulationResult;
+
+
+    context.p1_state.simulation =
+      result;
+
+
+    return {
+      success: true,
+      result,
+    };
+
+  }
+
+
+  /* =======================================================
+     STRATEGY REQUEST
+  ======================================================= */
+
+  private handleStrategyRequest(
+    context: ReturnType<
+      typeof createAIContext
+    >,
+
+    strategySelection: ReturnType<
+      typeof selectCandidateStrategies
+    >,
+
+    llmResponse: Awaited<
+      ReturnType<
+        P2LLMService["generate"]
+      >
+    >
+  ): P2OrchestratorResult {
 
     if (
       strategySelection.requires_clarification
     ) {
-      return {
-        success: true,
-        intent,
-        context,
-        message:
-          strategySelection.clarification_question ??
-          "I need more information before selecting a strategy.",
-      };
-    }
-
-    // ========================================================
-    // STEP 6 — LLM Reasoning
-    // ========================================================
-
-    let llmOutput;
-
-    try {
-      llmOutput =
-        await this.llm.generate(
-          context,
-        );
-    } catch (error) {
-      return {
-        success: false,
-        intent,
-        context,
-        message:
-          "The AI reasoning service could not process the request.",
-        error:
-          this.getErrorMessage(error),
-      };
-    }
-
-    // ========================================================
-    // STEP 7 — Guardrail Validation
-    // ========================================================
-
-    const actionType =
-      this.mapIntentToAction(
-        intent.intent,
-      );
-
-    const guardrail =
-      validateAIAction(
-        actionType,
-        {
-          p1ResultAvailable:
-            context.p1_state?.simulation !==
-            undefined,
-
-          p1ValidationPassed: false,
-
-          strategyApproved: false,
-
-          strategyExecuted: false,
-
-          knownFacts:
-            this.collectKnownFacts(
-              context,
-            ),
-
-          missingInformation: [],
-        },
-      );
-
-    if (!guardrail.allowed) {
-      return {
-        success: false,
-        intent,
-        context,
-        message:
-          "The requested AI action was blocked by a P2 guardrail.",
-        error:
-          guardrail.errors.join("; ") ||
-          "AI action not permitted.",
-      };
-    }
-
-    // ========================================================
-    // STEP 8 — P1-Dependent Operations
-    // ========================================================
-
-    if (
-      intent.intent ===
-        "analyze_congestion" ||
-      intent.intent ===
-        "identify_bottleneck" ||
-      intent.intent ===
-        "check_status"
-    ) {
-      return this.runBaselineAnalysis(
-        input,
-        intent,
-        context,
-      );
-    }
-
-    // ========================================================
-    // STEP 9 — Strategy Requests
-    // ========================================================
-
-    if (
-      intent.intent ===
-      "request_strategy"
-    ) {
-      const selected =
-        strategySelection.candidates;
-
-      if (selected.length === 0) {
-        return {
-          success: true,
-          intent,
-          context,
-          message:
-            "No suitable strategy was found in the configured strategy catalog.",
-        };
-      }
-
-      const strategyNames =
-        selected
-          .map(
-            (strategy) =>
-              `${strategy.strategy_id}: ${strategy.name}`,
-          )
-          .join("\n");
 
       return {
         success: true,
-        intent,
+
+        intent:
+          "request_strategy",
+
+        response:
+          strategySelection
+            .clarification_question ??
+          "Please provide more information so a strategy can be selected.",
+
         context,
-        message:
-          llmOutput.explanation ??
-          `Candidate strategies:\n${strategyNames}`,
       };
+
     }
 
-    // ========================================================
-    // STEP 10 — Explain Existing P1 Result
-    // ========================================================
 
-    if (
-      intent.intent ===
-      "explain_result"
-    ) {
-      const simulation =
-        context.p1_state?.simulation;
+    const candidates =
+      strategySelection.candidates;
 
-      if (!simulation) {
-        return {
-          success: true,
-          intent,
-          context,
-          message:
-            "No P1 simulation result is currently available to explain.",
-        };
-      }
 
-      const response =
-        explainSimulationResult(
-          simulation,
-        );
+    if (candidates.length === 0) {
 
       return {
         success: true,
-        intent,
+
+        intent:
+          "request_strategy",
+
+        response:
+          llmResponse.explanation ??
+          "No applicable strategy was found in the approved strategy catalog.",
+
         context,
-        response,
-        message:
-          formatOrganizerResponse(
-            response,
-          ),
       };
+
     }
 
-    // ========================================================
-    // STEP 11 — Strategy Approval / Execution
-    // ========================================================
 
-    if (
-      intent.intent ===
-        "execute_strategy" ||
-      intent.intent ===
-        "approve_strategy" ||
-      intent.intent ===
-        "reject_strategy"
-    ) {
-      return {
-        success: true,
-        intent,
-        context,
-        message:
-          "This request requires the strategy approval and execution workflow. P2 will not claim execution until the required approval and P1 validation are confirmed.",
-      };
-    }
+    const names =
+      candidates
+        .map(
+          (strategy) =>
+            `${strategy.strategy_id}: ${strategy.name}`
+        )
+        .join("\n");
 
-    // ========================================================
-    // STEP 12 — Generic AI Response
-    // ========================================================
 
     const response: AIResponse = {
+
       summary:
-        llmOutput.explanation ??
-        "The request was understood, but no P1 operation was required.",
+        "P2 identified the following candidate mitigation strategies.",
 
       findings:
-        llmOutput.reasoning ?? [],
+        candidates.map(
+          (strategy) =>
+            `${strategy.strategy_id}: ${strategy.name}`
+        ),
+
+      strategy:
+        names,
+
+      recommendation:
+        "These are candidate strategies only. P1 must validate and simulate the selected strategy before execution.",
+
+      warnings: [
+        "Candidate strategies have not been executed.",
+        "Operational parameters must be validated by P1.",
+      ],
+
+      execution_status:
+        "pending_approval",
+    };
+
+
+    return this.validateAndReturnResponse(
+      context,
+      response
+    );
+
+  }
+
+
+  /* =======================================================
+     STRATEGY SIMULATION
+  ======================================================= */
+
+  private handleStrategySimulation(
+    context: ReturnType<
+      typeof createAIContext
+    >,
+
+    p1Context:
+      P1SimulationContext | undefined,
+
+    llmResponse: Awaited<
+      ReturnType<
+        P2LLMService["generate"]
+      >
+    >
+  ): P2OrchestratorResult {
+
+    const strategyId =
+      context.entities.strategy_id;
+
+
+    if (!strategyId) {
+
+      return {
+        success: true,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          "Please provide a strategy ID, for example ST-001.",
+
+        context,
+      };
+
+    }
+
+
+    const strategy =
+      getStrategyById(strategyId);
+
+
+    if (!strategy) {
+
+      return {
+        success: false,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          `Strategy ${strategyId} does not exist in the approved strategy catalog.`,
+
+        context,
+      };
+
+    }
+
+
+    if (!p1Context) {
+
+      return {
+        success: false,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          "P1 context is required before a strategy can be simulated.",
+
+        context,
+      };
+
+    }
+
+
+    /* ---------------------------------------------------
+       Validate strategy
+    --------------------------------------------------- */
+
+    const validation =
+      p2ToolRegistry.validateStrategy(
+        strategy
+      );
+
+
+    if (!validation.success) {
+
+      return {
+        success: false,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          validation.error ??
+          "Strategy validation failed.",
+
+        context,
+      };
+
+    }
+
+
+    /* ---------------------------------------------------
+       Simulate strategy
+    --------------------------------------------------- */
+
+    const simulation =
+      p2ToolRegistry.simulateStrategy({
+        context: p1Context,
+        strategy: strategy,
+      });
+
+
+    addToolResult(
+      context,
+      {
+        tool_name:
+          "simulate_strategy",
+
+        success:
+          simulation.success,
+
+        summary:
+          simulation.success
+            ? "Strategy simulation completed."
+            : "Strategy simulation is not currently available through P1.",
+
+        data:
+          simulation.data,
+      }
+    );
+
+
+    /*
+     * Current P1 only exposes baseline simulation.
+     * Never fabricate strategy results.
+     */
+
+    if (!simulation.success) {
+
+      return {
+        success: true,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          "The strategy was structurally validated, but P1 does not currently expose strategy simulation. No simulated result has been fabricated.",
+
+        context,
+      };
+
+    }
+
+
+    if (!simulation.data) {
+
+      return {
+        success: true,
+
+        intent:
+          "simulate_strategy",
+
+        response:
+          "P1 did not return a strategy simulation result.",
+
+        context,
+      };
+
+    }
+
+
+    const response: AIResponse = {
+
+      summary:
+        llmResponse.explanation ??
+        `P1 returned a result for ${strategy.name}.`,
+
+      findings:
+        llmResponse.reasoning ?? [],
+
+      strategy:
+        strategy.name,
+
+      recommendation:
+        "Review the P1 result before approving execution.",
 
       warnings: [],
 
       execution_status:
-        "not_executed",
+        "pending_approval",
     };
 
-    // ========================================================
-    // STEP 13 — Validate Generated Response
-    // ========================================================
 
-    const validation =
-      validateAIResponse(
-        response.summary,
-        {
-          p1ResultAvailable:
-            context.p1_state?.simulation !==
-            undefined,
+    return this.validateAndReturnResponse(
+      context,
+      response
+    );
 
-          p1ValidationPassed: false,
+  }
 
-          strategyApproved: false,
 
-          strategyExecuted: false,
+  /* =======================================================
+     COMPARISON
+  ======================================================= */
 
-          knownFacts:
-            this.collectKnownFacts(
-              context,
-            ),
+  private handleComparison(
+    context: ReturnType<
+      typeof createAIContext
+    >
+  ): P2OrchestratorResult {
 
-          missingInformation: [],
-        },
-      );
+    const simulation =
+      context.p1_state.simulation;
 
-    if (!validation.valid) {
+
+    if (!simulation) {
+
       return {
-        success: false,
-        intent,
+        success: true,
+
+        intent:
+          "compare_strategy",
+
+        response:
+          "A baseline P1 simulation result is required before comparison.",
+
         context,
-        message:
-          "The generated AI response failed P2 guardrail validation.",
-        error:
-          validation.errors.join("; ") ||
-          "Invalid AI response.",
       };
+
     }
+
 
     return {
       success: true,
-      intent,
+
+      intent:
+        "compare_strategy",
+
+      response:
+        "Comparison requires both a baseline P1 result and a strategy simulation result. P2 will not invent the missing strategy result.",
+
       context,
-      response,
-      message:
-        formatOrganizerResponse(
-          response,
-        ),
     };
+
   }
 
-  // ==========================================================
-  // Baseline P1 Analysis
-  // ==========================================================
 
-  private runBaselineAnalysis(
-    input: P2OrchestratorInput,
-    intent: IntentResult,
-    context: AIContext,
+  /* =======================================================
+     EXPLAIN RESULT
+  ======================================================= */
+
+  private handleExplanation(
+    context: ReturnType<
+      typeof createAIContext
+    >
   ): P2OrchestratorResult {
-    if (!input.p1_context) {
+
+    const result =
+      context.p1_state.simulation;
+
+
+    if (!result) {
+
       return {
         success: true,
-        intent,
+
+        intent:
+          "explain_result",
+
+        response:
+          "There is currently no P1 simulation result available to explain.",
+
         context,
-        message:
-          "I can analyze the event, but the P1 simulation context has not been provided.",
       };
+
     }
 
-    try {
-      const result =
-        runBaselineSimulation({
-          context:
-            input.p1_context,
-        });
 
-      if (!result.success) {
-        return {
-          success: false,
-          intent,
-          context,
-          message:
-            "P1 simulation could not be completed.",
-          error:
-            result.error ??
-            "Unknown P1 simulation error.",
-        };
-      }
-
-      addToolResult(
-        context,
-        {
-          tool_name:
-            "runBaselineSimulation",
-
-          success: true,
-
-          summary:
-            "P1 baseline simulation completed.",
-
-          data: result.data,
-        },
+    const explanation =
+      explainSimulationResult(
+        result
       );
 
-      context.p1_state = {
-        ...context.p1_state,
-        simulation: result.data,
-      };
 
-      const simulation =
-        context.p1_state.simulation;
+    return {
+      success: true,
 
-      if (!simulation) {
-        return {
-          success: false,
-          intent,
-          context,
-          message:
-            "P1 completed but did not return a simulation result.",
-        };
-      }
+      intent:
+        "explain_result",
 
-      const response =
-        explainSimulationResult(
-          simulation,
-        );
+      response:
+        formatOrganizerResponse(
+          explanation
+        ),
+
+      context,
+    };
+
+  }
+
+
+  /* =======================================================
+     APPROVAL
+  ======================================================= */
+
+  private handleApproval(
+    context: ReturnType<
+      typeof createAIContext
+    >
+  ): P2OrchestratorResult {
+
+    const strategyId =
+      context.entities.strategy_id;
+
+
+    if (!strategyId) {
 
       return {
         success: true,
-        intent,
+
+        intent:
+          "approve_strategy",
+
+        response:
+          "Please specify the strategy ID that should be approved.",
+
         context,
-        response,
-        message:
-          formatOrganizerResponse(
-            response,
-          ),
       };
-    } catch (error) {
+
+    }
+
+
+    return {
+      success: true,
+
+      intent:
+        "approve_strategy",
+
+      response:
+        `Approval request received for ${strategyId}. Execution requires the defined validation and approval workflow.`,
+
+      context,
+    };
+
+  }
+
+
+  /* =======================================================
+     REJECTION
+  ======================================================= */
+
+  private handleRejection(
+    context: ReturnType<
+      typeof createAIContext
+    >
+  ): P2OrchestratorResult {
+
+    const strategyId =
+      context.entities.strategy_id;
+
+
+    if (!strategyId) {
+
+      return {
+        success: true,
+
+        intent:
+          "reject_strategy",
+
+        response:
+          "Please specify the strategy ID that should be rejected.",
+
+        context,
+      };
+
+    }
+
+
+    return {
+      success: true,
+
+      intent:
+        "reject_strategy",
+
+      response:
+        `Strategy ${strategyId} has been marked as rejected in the P2 workflow. No execution was performed.`,
+
+      context,
+    };
+
+  }
+
+
+  /* =======================================================
+     EXECUTION
+  ======================================================= */
+
+  private handleExecution(
+    context: ReturnType<
+      typeof createAIContext
+    >
+  ): P2OrchestratorResult {
+
+    const strategyId =
+      context.entities.strategy_id;
+
+
+    if (!strategyId) {
+
+      return {
+        success: true,
+
+        intent:
+          "execute_strategy",
+
+        response:
+          "Please specify the strategy ID to execute.",
+
+        context,
+      };
+
+    }
+
+
+    return {
+      success: true,
+
+      intent:
+        "execute_strategy",
+
+      response:
+        `Execution of ${strategyId} cannot be claimed by P2. The strategy must first pass P1 validation and the organizer approval workflow.`,
+
+      context,
+    };
+
+  }
+
+
+  /* =======================================================
+     BASELINE REQUIREMENT
+  ======================================================= */
+
+  private requiresBaselineAnalysis(
+    intent: string
+  ): boolean {
+
+    return (
+      intent ===
+        "analyze_congestion" ||
+
+      intent ===
+        "identify_bottleneck" ||
+
+      intent ===
+        "check_status"
+    );
+
+  }
+
+
+  /* =======================================================
+     RESPONSE VALIDATION
+  ======================================================= */
+
+  private validateAndReturnResponse(
+    context: ReturnType<
+      typeof createAIContext
+    >,
+
+    response: AIResponse
+  ): P2OrchestratorResult {
+
+    const guardrailContext = {
+
+      p1ResultAvailable:
+        Boolean(
+          context.p1_state.simulation
+        ),
+
+      p1ValidationPassed:
+        false,
+
+      strategyApproved:
+        false,
+
+      strategyExecuted:
+        false,
+
+      knownFacts:
+        this.collectKnownFacts(
+          context
+        ),
+
+      missingInformation: [],
+    };
+
+
+    /*
+     * Your guardrail function expects:
+     *
+     * validateAIResponse(
+     *   responseText,
+     *   aiResponse,
+     *   guardrailContext
+     * )
+     *
+     * Therefore we provide all three.
+     */
+
+    const responseText =
+      formatOrganizerResponse(
+        response
+      );
+
+
+    const validation =
+      validateAIResponse(
+        responseText,
+    
+        guardrailContext
+      );
+
+
+    if (!validation.valid) {
+
       return {
         success: false,
-        intent,
-        context,
-        message:
-          "An error occurred while communicating with the P1 simulation engine.",
+
+        intent:
+          context.intent,
+
+        response:
+          "P2 response was blocked by AI guardrails.",
+
         error:
-          this.getErrorMessage(error),
+          validation.errors.join(
+            "; "
+          ),
+
+        context,
       };
+
     }
+
+
+    return {
+      success: true,
+
+      intent:
+        context.intent,
+
+      response:
+        responseText,
+
+      context,
+    };
+
   }
 
-  // ==========================================================
-  // Intent → AI Action
-  // ==========================================================
 
-  private mapIntentToAction(
-    intent: IntentResult["intent"],
-  ):
-    | "explain"
-    | "propose_strategy"
-    | "request_simulation"
-    | "request_validation"
-    | "request_comparison"
-    | "execute_strategy" {
-    switch (intent) {
-      case "request_strategy":
-        return "propose_strategy";
-
-      case "simulate_strategy":
-        return "request_simulation";
-
-      case "compare_strategy":
-        return "request_comparison";
-
-      case "execute_strategy":
-        return "execute_strategy";
-
-      case "approve_strategy":
-      case "reject_strategy":
-        return "request_validation";
-
-      default:
-        return "explain";
-    }
-  }
-
-  // ==========================================================
-  // Known Facts
-  // ==========================================================
+  /* =======================================================
+     KNOWN FACTS
+  ======================================================= */
 
   private collectKnownFacts(
-    context: AIContext,
+    context: ReturnType<
+      typeof createAIContext
+    >
   ): string[] {
+
     const facts: string[] = [];
 
-    if (
-      context.p1_state?.simulation
-    ) {
+
+    if (context.organizer_request) {
+
       facts.push(
-        "A P1 simulation result is available.",
+        `Organizer request: ${context.organizer_request}`
       );
+
     }
 
-    if (
-      context.event_data?.event_id
-    ) {
+
+    if (context.intent) {
+
       facts.push(
-        `Event ID: ${context.event_data.event_id}`,
+        `Detected intent: ${context.intent}`
       );
+
     }
 
-    if (context.entities.gate_id) {
-      facts.push(
-        `Gate: ${context.entities.gate_id}`,
-      );
-    }
-
-    if (context.entities.zone_id) {
-      facts.push(
-        `Zone: ${context.entities.zone_id}`,
-      );
-    }
-
-    if (context.entities.route_id) {
-      facts.push(
-        `Route: ${context.entities.route_id}`,
-      );
-    }
 
     if (
       context.entities.strategy_id
     ) {
+
       facts.push(
-        `Strategy: ${context.entities.strategy_id}`,
+        `Strategy ID: ${context.entities.strategy_id}`
       );
+
     }
+
+
+    if (
+      context.p1_state.simulation
+    ) {
+
+      facts.push(
+        "A P1 simulation result is available."
+      );
+
+    }
+
 
     return facts;
+
   }
 
-  // ==========================================================
-  // Error Helper
-  // ==========================================================
 
-  private getErrorMessage(
-    error: unknown,
+  /* =======================================================
+     SAFE INTENT
+  ======================================================= */
+
+  private safeDetectIntent(
+    request: string
   ): string {
-    if (error instanceof Error) {
-      return error.message;
+
+    try {
+
+      return detectIntent(
+        request
+      ).intent;
+
+    } catch {
+
+      return "unknown";
+
     }
 
-    return String(error);
   }
+
 }
+
+
+/* =========================================================
+   SINGLETON
+========================================================= */
+
+export const p2Orchestrator =
+  new P2Orchestrator();

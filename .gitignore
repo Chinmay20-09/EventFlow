@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 Docs/P1_CROWD_DISRUPTION_ENGINE.md
 Fix_phase.md
+# Environment variables
+.env
+.env.*
+!.env.example
