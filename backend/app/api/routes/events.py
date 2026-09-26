@@ -10,14 +10,32 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import AuthorizedEvents, CurrentEvent, CurrentUser, DbSession
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.models.disruption import Disruption
-from app.models.event import Event, EventOrganizer
-from app.models.graph import Edge, Node
-from app.models.user import ROLE_ORGANIZER
+from app.models.event import Event
+from app.models.graph import Node
+from app.models.event import EventOrganizer
+from app.models.user import User, ROLE_ORGANIZER
+
+
+def _bind_event_owner(db, event: Event, owner_id: int) -> None:
+    """Server-side ownership: any created/updated event is bound to the
+    authenticated owner through the association table.
+
+    The client must NOT be able to choose the owner by sending user_id.
+    """
+    existing = db.execute(
+        select(EventOrganizer).where(
+            EventOrganizer.event_id == event.event_id,
+            EventOrganizer.user_id == owner_id,
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(EventOrganizer(event_id=event.event_id, user_id=owner_id))
+
 from app.schemas.disruption import DisruptionOut
 from app.schemas.edge import EdgeOut
 from app.schemas.event import EventCreate, EventOut, EventStateOut, NodeStateView
@@ -35,15 +53,13 @@ def get_event_or_404(db: Session, event_id: int) -> Event:
 
 
 @router.post("/events", status_code=status.HTTP_201_CREATED)
-def create_event(payload: EventCreate, db: DbSession, user: CurrentUser) -> dict:
-    """Create an Event (EV-016 §4); the authenticated creator becomes its Organizer.
+def create_event(payload: EventCreate, db: DbSession) -> dict:
+    """Create an Event (EV-016 §4). Validation happens before any DB write."""
+    # The authenticated user resolves the owner server-side.
+    owner = get_current_user(db=db)
+    if owner.role != ROLE_ORGANIZER:
+        raise AppError("FORBIDDEN", "Organizer role required to create an event", 403)
 
-    Validation happens before any DB write. Ownership is established through
-    the EXISTING event_organizers association (P4 Map §1) — the client never
-    supplies a user_id/owner_id. Coordinator-created events have no single
-    owner (Coordinators are the global operational role); only ORGANIZER
-    creators are bound.
-    """
     event = Event(
         name=payload.name,
         start_time=payload.start_time,
@@ -55,7 +71,12 @@ def create_event(payload: EventCreate, db: DbSession, user: CurrentUser) -> dict
     if user.role == ROLE_ORGANIZER:
         db.add(EventOrganizer(event_id=event.event_id, user_id=user.user_id))
     commit_or_fail(db)
-    db.refresh(event)
+
+    # Ownership is server-side only: create the association for the
+    # authenticated user immediately, without trusting any client-supplied
+    # owner field.
+    _bind_event_owner(db, event, owner.user_id)
+
     return ok(EventOut.model_validate(event))
 
 
