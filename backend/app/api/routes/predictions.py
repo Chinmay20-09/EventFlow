@@ -16,7 +16,6 @@ from app.models.prediction import Prediction
 from app.schemas.prediction import PredictionIn, PredictionOut
 from app.services.event_settings import get_effective_settings
 from app.services.read_models import build_forecast
-from app.api.deps import get_current_event
 
 router = APIRouter(prefix="/api", tags=["predictions"])
 

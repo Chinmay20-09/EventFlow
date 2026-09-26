@@ -5,6 +5,9 @@ sqlalchemy
 psycopg[binary]
 pydantic
 pydantic-settings
+email-validator
+bcrypt
+pyjwt
 
 # Tests
 pytest

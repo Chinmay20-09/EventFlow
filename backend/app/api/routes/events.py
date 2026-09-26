@@ -1,20 +1,27 @@
-"""Event endpoints and the current event state (EV-016 §4, §13; EV-037 §3–§4)."""
+"""Event endpoints and the current event state (EV-016 §4, §13; EV-037 §3–§4).
+
+P4 Map addition: the event creator is bound SERVER-SIDE through the existing
+event_organizers ownership table (the request body never carries a user_id),
+and GET /api/events/{event_id} now returns the map data (location, nodes,
+edges) alongside the unchanged event fields.
+"""
 
 from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import AuthorizedEvents, CurrentEvent, DbSession
+from app.api.deps import CurrentUser, DbSession
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.models.disruption import Disruption
-from app.models.event import Event
-from app.models.graph import Node
-from app.models.event import EventOrganizer
-from app.models.user import User, ROLE_ORGANIZER
+from app.models.event import Event, EventOrganizer
+from app.models.graph import Edge, Node
+from app.models.user import ROLE_ORGANIZER
 from app.schemas.disruption import DisruptionOut
+from app.schemas.edge import EdgeOut
 from app.schemas.event import EventCreate, EventOut, EventStateOut, NodeStateView
+from app.schemas.map import EventLocation, MapDataOut
 
 router = APIRouter(prefix="/api", tags=["events"])
 
@@ -28,8 +35,15 @@ def get_event_or_404(db: Session, event_id: int) -> Event:
 
 
 @router.post("/events", status_code=status.HTTP_201_CREATED)
-def create_event(payload: EventCreate, db: DbSession) -> dict:
-    """Create an Event (EV-016 §4). Validation happens before any DB write."""
+def create_event(payload: EventCreate, db: DbSession, user: CurrentUser) -> dict:
+    """Create an Event (EV-016 §4); the authenticated creator becomes its Organizer.
+
+    Validation happens before any DB write. Ownership is established through
+    the EXISTING event_organizers association (P4 Map §1) — the client never
+    supplies a user_id/owner_id. Coordinator-created events have no single
+    owner (Coordinators are the global operational role); only ORGANIZER
+    creators are bound.
+    """
     event = Event(
         name=payload.name,
         start_time=payload.start_time,
@@ -37,7 +51,11 @@ def create_event(payload: EventCreate, db: DbSession) -> dict:
         status="ACTIVE",
     )
     db.add(event)
+    db.flush()  # assign event_id before binding the creator
+    if user.role == ROLE_ORGANIZER:
+        db.add(EventOrganizer(event_id=event.event_id, user_id=user.user_id))
     commit_or_fail(db)
+    db.refresh(event)
     return ok(EventOut.model_validate(event))
 
 
@@ -50,25 +68,69 @@ def list_events(db: DbSession) -> dict:
 
 @router.get("/events/{event_id}")
 def get_event(event_id: int, db: DbSession) -> dict:
-    """Return one Event (EV-016 §4).
+    """Return one Event with its P4 map data: location, nodes and edges.
 
-    The event is re-validated through `require_event`, so an Organizer can only
-    read events they are bound to (and a Coordinator reads everything).
+    Reads stay public (existing convention); the response keeps every field
+    existing clients rely on and adds `location`, `nodes` and `edges`.
     """
-    event = get_current_event(db=db, event_id=event_id)
-    return ok(EventOut.model_validate(event))
+    event = get_event_or_404(db, event_id)
+
+    nodes = db.execute(
+        select(Node).where(Node.event_id == event_id).order_by(Node.node_id)
+    ).scalars().all()
+    crowd_by_node: dict[int, CrowdState] = {}
+    if nodes:
+        crowd_rows = db.execute(
+            select(CrowdState).where(CrowdState.node_id.in_([n.node_id for n in nodes]))
+        ).scalars().all()
+        crowd_by_node = {row.node_id: row for row in crowd_rows}
+    edges = db.execute(
+        select(Edge).where(Edge.event_id == event_id).order_by(Edge.edge_id)
+    ).scalars().all()
+
+    return ok(
+        MapDataOut(
+            event_id=event.event_id,
+            name=event.name,
+            status=event.status,
+            start_time=event.start_time,
+            end_time=event.end_time,
+            location=EventLocation(
+                bounds=event.location_bounds,
+                zoom=event.location_zoom,
+                center=event.location_center,
+                saved_at=event.location_saved_at,
+            ),
+            nodes=[
+                NodeStateView(
+                    node_id=node.node_id,
+                    name=node.name,
+                    type=node.type,
+                    capacity=node.capacity,
+                    status=node.status,
+                    current_crowd=crowd_by_node[node.node_id].current_crowd
+                    if node.node_id in crowd_by_node
+                    else None,
+                    crowd_updated_at=crowd_by_node[node.node_id].updated_at
+                    if node.node_id in crowd_by_node
+                    else None,
+                )
+                for node in nodes
+            ],
+            edges=[EdgeOut.model_validate(edge) for edge in edges],
+        )
+    )
 
 
 @router.get("/events/{event_id}/state")
 def get_event_state(event_id: int, db: DbSession) -> dict:
-    """Current live operational state (EV-016 section 13    Assembled exclusively from stored rows: event, nodes with their current
+    """Current live operational state (EV-016 §13).
+
+    Assembled exclusively from stored rows: event, nodes with their current
     crowd state, and active disruptions. Simulation results are never included
-    here - simulation state must not be presented as live state (EV-016 section 13    """
-    # The event context is re-validated by get_current_event: an Organizer may
-    # only read state for events they manage; a Coordinator may read every
-    # event. The `event_id` in the path is ignored — event ownership comes
-    # exclusively from the authenticated user (EV-023 §4).
-    event = get_current_event(db=db, event_id=event_id)
+    here — simulation state must not be presented as live state (EV-016 §13).
+    """
+    event = get_event_or_404(db, event_id)
 
     nodes = db.execute(
         select(Node).where(Node.event_id == event_id).order_by(Node.node_id)

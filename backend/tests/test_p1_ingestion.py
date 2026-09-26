@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from app.models.crowd import CrowdState
 
-from conftest import create_event, create_node, create_strategy_set
+from conftest import ORGANIZER_HEADERS, create_event, create_node, create_strategy_set
 
 
 # --- helpers ---------------------------------------------------------------
@@ -59,11 +59,12 @@ def _create_node_with_external(client, event_id, external_id, name="Hall", capac
         f"/api/events/{event_id}/nodes",
         json={
             "name": name,
-            "type": "ZONE",
+            "type": "VENUE",
             "capacity": capacity,
             "status": "OPEN",
             "external_id": external_id,
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]["node_id"]
@@ -392,7 +393,8 @@ def test_external_id_mapping_is_unique_within_event(client):
 
     duplicate_map = client.post(
         f"/api/events/{event_id}/nodes",
-        json={"name": "Dup", "type": "ZONE", "capacity": 100, "external_id": "HALL"},
+        json={"name": "Dup", "type": "VENUE", "capacity": 100, "external_id": "HALL"},
+        headers=ORGANIZER_HEADERS,
     )
     assert duplicate_map.status_code == 422
     assert duplicate_map.json()["error"]["code"] == "VALIDATION_ERROR"

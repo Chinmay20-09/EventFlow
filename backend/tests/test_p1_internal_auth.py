@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
+from conftest import ORGANIZER_HEADERS  # noqa: E402
 
 TEST_KEY = "test-shared-secret"
 
@@ -39,6 +40,7 @@ def _event(client: TestClient) -> int:
             "start_time": "2026-10-10T10:00:00Z",
             "end_time": "2026-10-10T22:00:00Z",
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]["event_id"]

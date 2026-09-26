@@ -18,8 +18,10 @@ from app.api.routes import (
     crowd,
     dashboard,
     disruptions,
+    edges,
     events,
     health,
+    live,
     nodes,
     p1,
     predictions,
@@ -29,6 +31,7 @@ from app.api.routes import settings as settings_router
 from app.core.config import settings, validate_settings
 from app.core.errors import setup_error_handlers
 from app.db.base import Base
+from app.db.migrations import run_startup_migrations
 from app.db.session import get_engine
 
 
@@ -36,8 +39,19 @@ from app.db.session import get_engine
 async def lifespan(app: FastAPI):
     """Validate configuration at startup, then ensure tables exist (EV-029 §11)."""
     validate_settings()
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    # Add columns that create_all cannot add to existing tables (auth + P4 map).
+    run_startup_migrations(engine)
+    # Capture the running loop so live-update broadcasts can be scheduled
+    # onto it from synchronous request handlers (see services.live_updates).
+    import asyncio
+
+    from app.services.live_updates import manager
+
+    manager.set_loop(asyncio.get_running_loop())
     yield
+    manager.set_loop(None)
 
 
 app = FastAPI(
@@ -63,6 +77,7 @@ for router in (
     auth.router,
     events.router,
     nodes.router,
+    edges.router,
     crowd.router,
     p1.router,
     disruptions.router,
@@ -71,5 +86,6 @@ for router in (
     dashboard.router,
     alerts.router,
     settings_router.router,
+    live.router,
 ):
     app.include_router(router)

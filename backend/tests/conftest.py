@@ -16,6 +16,9 @@ _TEST_DB_PATH = Path(tempfile.mkdtemp(prefix="eventflow-p3-")) / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["ENVIRONMENT"] = "test"
 os.environ.setdefault("MAX_SIMULATION_ATTEMPTS", "2")
+# JWT signing key for the auth tests (never a real secret) — the app refuses
+# to sign tokens with an empty key.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-eventflow-p3-only")
 
 # Make `backend/` importable regardless of how pytest is invoked.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -32,9 +35,12 @@ from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, ROLE_VISITOR, User
 COORDINATOR_ID = 1
 ORGANIZER_ID = 2
 VISITOR_ID = 3
+# A second organizer for cross-organizer authorization tests (User A → Event B).
+ORGANIZER_B_ID = 4
 
 COORDINATOR_HEADERS = {"X-User-Id": str(COORDINATOR_ID)}
 ORGANIZER_HEADERS = {"X-User-Id": str(ORGANIZER_ID)}
+ORGANIZER_B_HEADERS = {"X-User-Id": str(ORGANIZER_B_ID)}
 VISITOR_HEADERS = {"X-User-Id": str(VISITOR_ID)}
 
 EVENT_PAYLOAD = {
@@ -56,6 +62,7 @@ def client():
                         User(username="coordinator", role=ROLE_COORDINATOR),
                         User(username="organizer", role=ROLE_ORGANIZER),
                         User(username="visitor", role=ROLE_VISITOR),
+                        User(username="organizer2", role=ROLE_ORGANIZER),
                     ]
                 )
                 db.commit()
@@ -76,9 +83,13 @@ def db():
     session.close()
 
 
-def create_event(client: TestClient, name: str = EVENT_PAYLOAD["name"]) -> int:
-    """Helper: create an event and return its id."""
-    response = client.post("/api/events", json={**EVENT_PAYLOAD, "name": name})
+def create_event(client: TestClient, name: str = EVENT_PAYLOAD["name"], headers=None) -> int:
+    """Helper: create an event (as the primary organizer) and return its id."""
+    response = client.post(
+        "/api/events",
+        json={**EVENT_PAYLOAD, "name": name},
+        headers=headers if headers is not None else ORGANIZER_HEADERS,
+    )
     assert response.status_code == 201, response.text
     return response.json()["data"]["event_id"]
 
@@ -101,9 +112,21 @@ def create_node(
             "capacity": capacity,
             "status": "OPEN",
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]["node_id"]
+
+
+def create_edge(client: TestClient, event_id: int, from_node_id: int, to_node_id: int) -> int:
+    """Helper: create an edge and return its id."""
+    response = client.post(
+        f"/api/events/{event_id}/edges",
+        json={"from": from_node_id, "to": to_node_id},
+        headers=ORGANIZER_HEADERS,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]["edge_id"]
 
 
 def create_strategy_set(client: TestClient, event_id: int, source: int, dest: int) -> int:

@@ -24,7 +24,9 @@ def test_error_envelope_shape_for_not_found(client):
 
 
 def test_error_envelope_shape_for_validation(client):
-    response = client.post("/api/events", json={"name": ""})
+    from conftest import ORGANIZER_HEADERS
+
+    response = client.post("/api/events", json={"name": ""}, headers=ORGANIZER_HEADERS)
     assert response.status_code == 422
     body = response.json()
     assert set(body.keys()) == {"success", "error"}

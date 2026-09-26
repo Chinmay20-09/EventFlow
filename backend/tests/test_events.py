@@ -1,11 +1,11 @@
 """Tests: event creation/retrieval, event state, validation and not-found
 errors (req. 2, 3, 14, 15, 16)."""
 
-from conftest import EVENT_PAYLOAD, create_event, create_node
+from conftest import EVENT_PAYLOAD, ORGANIZER_HEADERS, create_event, create_node
 
 
 def test_create_event_returns_envelope(client):
-    response = client.post("/api/events", json=EVENT_PAYLOAD)
+    response = client.post("/api/events", json=EVENT_PAYLOAD, headers=ORGANIZER_HEADERS)
 
     assert response.status_code == 201
     body = response.json()
@@ -49,7 +49,7 @@ def test_invalid_event_payload_is_rejected_and_not_stored(client):
     before = client.get("/api/events").json()["data"]
 
     # Missing required fields.
-    response = client.post("/api/events", json={"name": "No times"})
+    response = client.post("/api/events", json={"name": "No times"}, headers=ORGANIZER_HEADERS)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -61,6 +61,7 @@ def test_invalid_event_payload_is_rejected_and_not_stored(client):
             "start_time": "2026-10-10T22:00:00Z",
             "end_time": "2026-10-10T10:00:00Z",
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -69,6 +70,7 @@ def test_invalid_event_payload_is_rejected_and_not_stored(client):
     response = client.post(
         "/api/events",
         json={**EVENT_PAYLOAD, "status": "HACKED"},
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
