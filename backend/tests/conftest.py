@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.db.session import get_sessionmaker  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.event import EventOrganizer  # noqa: E402
 from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, ROLE_VISITOR, User  # noqa: E402
 
 # Seeded user ids (asserted below — the test database starts empty).

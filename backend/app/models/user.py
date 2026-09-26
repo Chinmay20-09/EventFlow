@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.utils import utcnow
@@ -23,3 +23,14 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     role: Mapped[str] = mapped_column(String(30), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    # The events this user owns. An Organizer may manage many events; each
+    # Event is owned through the event_organizers association table, never
+    # stored as a single event_id column on the User row.
+    events: Mapped[list["Event"]] = relationship(
+        "Event",
+        secondary="event_organizers",
+        back_populates="organizers",
+        lazy="selectin",
+    )
+

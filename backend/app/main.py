@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models  # noqa: F401
 from app.api.routes import (
     alerts,
+    auth,
     crowd,
     dashboard,
     disruptions,
@@ -59,6 +60,7 @@ setup_error_handlers(app)
 
 for router in (
     health.router,
+    auth.router,
     events.router,
     nodes.router,
     crowd.router,

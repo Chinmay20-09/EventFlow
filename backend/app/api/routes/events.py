@@ -4,13 +4,15 @@ from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import DbSession
+from app.api.deps import AuthorizedEvents, CurrentEvent, DbSession
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.models.disruption import Disruption
 from app.models.event import Event
 from app.models.graph import Node
+from app.models.event import EventOrganizer
+from app.models.user import User, ROLE_ORGANIZER
 from app.schemas.disruption import DisruptionOut
 from app.schemas.event import EventCreate, EventOut, EventStateOut, NodeStateView
 
@@ -48,20 +50,25 @@ def list_events(db: DbSession) -> dict:
 
 @router.get("/events/{event_id}")
 def get_event(event_id: int, db: DbSession) -> dict:
-    """Return one Event (EV-016 §4)."""
-    event = get_event_or_404(db, event_id)
+    """Return one Event (EV-016 §4).
+
+    The event is re-validated through `require_event`, so an Organizer can only
+    read events they are bound to (and a Coordinator reads everything).
+    """
+    event = get_current_event(db=db, event_id=event_id)
     return ok(EventOut.model_validate(event))
 
 
 @router.get("/events/{event_id}/state")
 def get_event_state(event_id: int, db: DbSession) -> dict:
-    """Current live operational state (EV-016 §13).
-
-    Assembled exclusively from stored rows: event, nodes with their current
+    """Current live operational state (EV-016 section 13    Assembled exclusively from stored rows: event, nodes with their current
     crowd state, and active disruptions. Simulation results are never included
-    here — simulation state must not be presented as live state (EV-016 §13).
-    """
-    event = get_event_or_404(db, event_id)
+    here - simulation state must not be presented as live state (EV-016 section 13    """
+    # The event context is re-validated by get_current_event: an Organizer may
+    # only read state for events they manage; a Coordinator may read every
+    # event. The `event_id` in the path is ignored — event ownership comes
+    # exclusively from the authenticated user (EV-023 §4).
+    event = get_current_event(db=db, event_id=event_id)
 
     nodes = db.execute(
         select(Node).where(Node.event_id == event_id).order_by(Node.node_id)

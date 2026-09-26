@@ -7,12 +7,12 @@ crowd state (EV-016 §6, EV-003 §10).
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentEvent, DbSession
+from app.api.deps_event import get_current_event
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.schemas.crowd import CrowdIngestIn, CrowdOut
-from app.api.routes.events import get_event_or_404
 from app.api.routes.nodes import get_node_or_404
 from app.utils import utcnow
 
@@ -38,8 +38,13 @@ def ingest_crowd(payload: CrowdIngestIn, db: DbSession) -> dict:
     current row per node (EV-016 §6, EV-020 §4). Duplicate submissions are
     idempotent last-write-wins upserts — never a second row. Graph capacity
     is never modified by crowd data (EV-020 §5).
+
+    Event ownership is re-validated here: the caller must be an Organizer who
+    is bound to ``payload.event_id`` (or a Coordinator, who may ingest for any
+    event). The `event_id` is never trusted from the client; it is checked
+    against the authenticated user just like any other event-scoped field.
     """
-    event = get_event_or_404(db, payload.event_id)
+    event = get_current_event(db=db, event_id=payload.event_id)
     node = get_node_or_404(db, payload.node_id)
     if node.event_id != event.event_id:
         raise AppError(
