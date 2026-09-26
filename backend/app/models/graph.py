@@ -33,6 +33,10 @@ class Node(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     capacity: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Expected attendance for this node (P4 map node fields). Nullable so
+    # nodes created before this field stay valid; the graph configuration
+    # write path (POST /nodes) fills it going forward.
+    visitors_expected: Mapped[int | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 

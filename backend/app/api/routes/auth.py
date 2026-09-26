@@ -13,7 +13,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.errors import AppError, ok
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import commit_or_fail
-from app.models.user import ROLE_VISITOR, User
+from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, ROLE_VISITOR, User
 from app.schemas.user import LoginRequest, RegisterRequest, TokenOut, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -43,11 +43,17 @@ def _authenticate(db, login: str, password: str) -> User:
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: DbSession) -> dict:
-    """Register a new Visitor account (EV-023 §2 — self-registration).
+    """Register a new VISITOR or COORDINATOR account (EV-023 §2).
 
-    The role is always VISITOR: the request body carries no role field, so
-    privilege escalation through registration is impossible. Organizer and
-    Coordinator accounts are provisioned out-of-band by an operator.
+    Role handling (client-selectable, e.g. by the Flutter app):
+    * `role` omitted or "VISITOR"  -> VISITOR (default for attendees).
+    * `role` == "COORDINATOR"      -> COORDINATOR (operational staff).
+    * "ORGANIZER" (or any other value) -> rejected with 422: Organizer
+      accounts are bound to events server-side and are provisioned
+      out-of-band by an operator — never through self-registration.
+
+    Validation happens before any DB write; username and email uniqueness
+    are enforced with the documented 409 CONFLICT response.
     """
     normalized_email = payload.email.lower()
 
@@ -60,11 +66,20 @@ def register(payload: RegisterRequest, db: DbSession) -> dict:
         field = "username" if duplicate.username == payload.username else "email"
         raise AppError("CONFLICT", f"An account with this {field} already exists", 409)
 
+    if payload.role == ROLE_ORGANIZER:
+        # Unreachable through the schema (Literal type) — kept as an explicit
+        # guard so the register path can never create an Organizer.
+        raise AppError(
+            "VALIDATION_ERROR",
+            "ORGANIZER accounts cannot self-register",
+            422,
+        )
+
     user = User(
         username=payload.username,
         email=normalized_email,
         password_hash=hash_password(payload.password),
-        role=ROLE_VISITOR,
+        role=payload.role if payload.role in (ROLE_VISITOR, ROLE_COORDINATOR) else ROLE_VISITOR,
     )
     db.add(user)
     commit_or_fail(db)

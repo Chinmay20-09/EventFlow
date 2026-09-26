@@ -34,16 +34,27 @@ class Settings(BaseSettings):
     p3_api_key: str = ""
 
     # User authentication (JWT bearer tokens for /api/auth and protected
-    # endpoints). SECRET_KEY signs the tokens — set it from the environment;
-    # a deployed instance must never run on the insecure default. Empty also
-    # disables token login for the seeded users (password_hash NULL). Dev
-    # X-User-Id identity resolution is unchanged.
-    secret_key: str = ""
-    # Token login needs a non-empty signing key. In dev/test the `.env` file
-    # (git-ignored) supplies it; deployed instances must set SECRET_KEY in the
-    # environment. An empty value is only tolerated in `development`.
+    # endpoints). SECRET_KEY signs the tokens — set it from the environment
+    # (or the git-ignored backend/.env in development); a deployed instance
+    # must never run on the insecure default. Empty also disables token login
+    # for seeded users (password_hash NULL). Dev X-User-Id identity is unchanged.
     secret_key: str = ""
     access_token_expire_minutes: int = 60
+
+    # --- P4 Map/Live external services (EV-029: env-only, never hardcoded) --
+    # OSRM foot-routing service used to compute edge walking distances.
+    # Empty disables the integration: edge writes still succeed, `distance`
+    # simply stays null (documented graceful degradation).
+    osrm_base_url: str = ""  # e.g. http://router.project-osrm.org (or self-hosted)
+    osrm_profile: str = "foot"
+    osrm_timeout_seconds: float = 3.0
+
+    # Groq text generation used by P2 for human-readable alert copy. Empty
+    # (or any runtime failure) degrades to deterministic backend text —
+    # alert text generation never blocks live-data persistence.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
+    groq_timeout_seconds: float = 5.0
 
 
 settings = Settings()

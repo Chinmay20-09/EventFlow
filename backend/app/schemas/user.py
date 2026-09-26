@@ -5,23 +5,29 @@ objects (and never password hashes) are exposed (EV-016, task Phase 4).
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, ROLE_VISITOR
 from app.schemas.common import OrmModel
+
+RegistrationRole = Literal["VISITOR", "COORDINATOR"]
 
 
 class RegisterRequest(BaseModel):
-    """Minimum fields required by the existing User model + auth columns.
+    """Fields required for self-registration from a client (e.g. the Flutter app).
 
-    Deliberately NO `role` field: everyone self-registers as a Visitor;
-    Organizer/Coordinator roles are provisioned out-of-band by an operator
-    (no privilege escalation through the request body).
+    `role` is optional and defaults to VISITOR. COORDINATOR may be chosen by
+    the client for operational users; ORGANIZER is deliberately not
+    registrable — Organizer accounts are bound to events server-side and are
+    provisioned out-of-band by an operator.
     """
 
     username: str = Field(min_length=1, max_length=80)
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
+    role: RegistrationRole = ROLE_VISITOR
 
     model_config = ConfigDict(extra="forbid")
 

@@ -9,8 +9,8 @@ PATCH or hard-delete endpoint (EV-016 §16–§17).
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentCoordinator, CurrentEvent, DbSession
-from app.api.deps_event import get_current_event
+from app.api.deps import CurrentCoordinator, DbSession
+from app.api.routes.events import get_event_or_404
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
 from app.models.graph import Node
@@ -48,7 +48,7 @@ def create_strategy_set(event_id: int, payload: StrategySetCreate, db: DbSession
     event — it is never trusted from the client, only re-checked against the
     authenticated user.
     """
-    event = get_current_event(db=db, event_id=event_id)
+    event = get_event_or_404(db, event_id)
 
     event_node_ids = {
         node_id
@@ -101,7 +101,7 @@ def create_strategy_set(event_id: int, payload: StrategySetCreate, db: DbSession
 def list_strategy_sets(event_id: int, db: DbSession) -> dict:
     """Return the Strategy Sets of an Event (EV-016 §9)."""
     # Re-validate event ownership before listing rows.
-    event = get_current_event(db=db, event_id=event_id)
+    event = get_event_or_404(db, event_id)
     strategy_sets = db.execute(
         select(StrategySet)
         .where(StrategySet.event_id == event_id)

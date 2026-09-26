@@ -1,14 +1,24 @@
-"""Idempotent start-up migration for the authentication columns.
+"""Idempotent start-up migration (auth columns + P4 map columns).
 
-The MVP bootstrap is `Base.metadata.create_all` (see IMPLEMENTATION_NOTES.md
-§2 — no Alembic in the allowed dependency list). `create_all` creates missing
-tables but never alters existing ones, so a database bootstrapped before the
-auth feature would keep a `users` table without `email`/`password_hash`.
+The MVP bootstrap is `Base.metadata.create_all` (no Alembic in the allowed
+dependency list). `create_all` creates missing tables but never alters
+existing ones, so a database bootstrapped before the auth feature keeps a
+`users` table without `email`/`password_hash` — which is what made
+`POST /api/auth/login` fail with
+`AttributeError: type object 'User' has no attribute 'email'`.
 
-This module adds exactly those two columns when they are missing — nothing
-else is ever altered or dropped. The column check uses SQLAlchemy's
-inspector, so it works the same on PostgreSQL (production) and SQLite
-(automated tests). On PostgreSQL each DDL runs in its own transaction.
+This module adds exactly the missing pieces, nothing else:
+
+* `users.email VARCHAR(255)`      (nullable — seeded/dev users stay valid)
+* `users.password_hash VARCHAR(255)` (nullable — same reason)
+* `ix_users_email` — a UNIQUE index on email, created only after the existing
+  data has been checked: duplicate non-null emails would make the index
+  creation fail loudly (the rows are never modified or deleted; a conflict is
+  reported instead). NULL emails never conflict under a unique index.
+
+Nothing is ever dropped, reset or rewritten. Every statement is skipped when
+the column/index already exists, so running at every startup is safe.
+Works on PostgreSQL (production) and SQLite (automated tests) alike.
 """
 
 import logging
@@ -23,12 +33,29 @@ _REQUIRED_COLUMNS = {
     "users": {
         "email": "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
         "password_hash": "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)",
-    }
+    },
+    # P4 Map / Live support: 1:1 event location columns (nullable — events
+    # created before the map feature keep working) and the per-node expected
+    # attendance. `location_saved_at` NULL == "not configured yet" (first
+    # save vs. later unlocked overwrite).
+    "events": {
+        "location_bounds": "ALTER TABLE events ADD COLUMN location_bounds JSON",
+        "location_zoom": "ALTER TABLE events ADD COLUMN location_zoom DOUBLE PRECISION",
+        "location_center": "ALTER TABLE events ADD COLUMN location_center JSON",
+        "location_saved_at": "ALTER TABLE events ADD COLUMN location_saved_at TIMESTAMP",
+    },
+    "nodes": {
+        "visitors_expected": "ALTER TABLE nodes ADD COLUMN visitors_expected INTEGER NULL",
+    },
 }
+
+# Unique index for email (name matches what SQLAlchemy would create from the
+# model so `create_all`-born tables and migrated tables agree).
+_EMAIL_INDEX = "ix_users_email"
 
 
 def run_startup_migrations(engine: Engine) -> None:
-    """Add the auth columns to `users` if the table predates them."""
+    """Add missing columns (auth + P4 map) + the unique email index if absent."""
     inspector = inspect(engine)
     with engine.connect() as connection:
         for table, columns in _REQUIRED_COLUMNS.items():
@@ -41,3 +68,17 @@ def run_startup_migrations(engine: Engine) -> None:
                 connection.execute(text(ddl))
                 connection.commit()
                 logger.info("Startup migration: added %s.%s", table, column)
+
+        # Unique email index — only when the column exists AND the index does
+        # not. If duplicate non-null emails exist, the CREATE fails and the
+        # exception propagates: startup stops loudly rather than silently
+        # rewriting or deleting any existing row.
+        existing_columns = {col["name"] for col in inspector.get_columns("users")} if inspector.has_table("users") else set()
+        if "email" in existing_columns and not any(
+            ix["name"] == _EMAIL_INDEX for ix in inspector.get_indexes("users")
+        ):
+            connection.execute(
+                text("CREATE UNIQUE INDEX ix_users_email ON users (email)")
+            )
+            connection.commit()
+            logger.info("Startup migration: created unique index %s", _EMAIL_INDEX)

@@ -6,8 +6,8 @@ they introduce no second source of truth and never include simulation state.
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentEvent, DbSession
-from app.api.deps_event import get_current_event
+from app.api.deps import DbSession
+from app.api.routes.events import get_event_or_404
 from app.core.errors import ok
 from app.schemas.dashboard import RecommendationOut
 from app.services.adapters import get_p2_intel
@@ -30,7 +30,7 @@ def get_dashboard(event_id: int, db: DbSession) -> dict:
     # (build_dashboard reads only rows whose event_id == event.event_id).
     # The event context is re-validated by `get_current_event`, so an
     # Organizer only ever sees their own event data.
-    event = get_current_event(db=db, event_id=event_id)
+    event = get_event_or_404(db, event_id)
     return ok(build_dashboard(db, event))
 
 
@@ -45,7 +45,7 @@ def get_zones(event_id: int, db: DbSession) -> dict:
     The zones endpoint is re-scoped by `get_current_event`, so an Organizer
     only sees zones for events they manage.
     """
-    event = get_current_event(db=db, event_id=event_id)
+    event = get_event_or_404(db, event_id)
     settings = get_effective_settings(db, event)
     return ok(build_zones(db, event_id, settings))
 
@@ -61,7 +61,7 @@ def get_recommendation(event_id: int, db: DbSession) -> dict:
     The recommendation endpoint is re-scoped by `get_current_event`, so an
     Organizer only receives recommendations for events they manage.
     """
-    event = get_current_event(db=db, event_id=event_id)
+    event = get_event_or_404(db, event_id)
     recommendation = get_p2_intel().get_recommendation(event_id)
     return ok(
         RecommendationOut(

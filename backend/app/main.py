@@ -18,8 +18,10 @@ from app.api.routes import (
     crowd,
     dashboard,
     disruptions,
+    edges,
     events,
     health,
+    live,
     nodes,
     p1,
     predictions,
@@ -39,9 +41,17 @@ async def lifespan(app: FastAPI):
     validate_settings()
     engine = get_engine()
     Base.metadata.create_all(engine)
-    # Add columns that create_all cannot add to existing tables (auth).
+    # Add columns that create_all cannot add to existing tables (auth + P4 map).
     run_startup_migrations(engine)
+    # Capture the running loop so live-update broadcasts can be scheduled
+    # onto it from synchronous request handlers (see services.live_updates).
+    import asyncio
+
+    from app.services.live_updates import manager
+
+    manager.set_loop(asyncio.get_running_loop())
     yield
+    manager.set_loop(None)
 
 
 app = FastAPI(
@@ -67,6 +77,7 @@ for router in (
     auth.router,
     events.router,
     nodes.router,
+    edges.router,
     crowd.router,
     p1.router,
     disruptions.router,
@@ -75,5 +86,6 @@ for router in (
     dashboard.router,
     alerts.router,
     settings_router.router,
+    live.router,
 ):
     app.include_router(router)

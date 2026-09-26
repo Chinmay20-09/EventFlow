@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, ForeignKey
+from sqlalchemy import DateTime, Float, JSON, String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -20,6 +20,18 @@ class Event(Base):
     end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    # --- Map location (P4 Map / Live specification) -------------------------
+    # 1:1 with the event, so the smallest correct storage is columns on the
+    # Event row itself (no second source of truth, no redundant ids). All
+    # nullable: an event exists before its map view is configured, and rows
+    # created before this feature keep working. `location_saved_at` is NULL
+    # until the first save — the flag that makes the first write different
+    # from later (explicitly unlocked) writes.
+    location_bounds: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    location_zoom: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_center: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    location_saved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Events belong to Organizers through the event_organizers association
     # table (an Organizer may manage many events; an Event may have many

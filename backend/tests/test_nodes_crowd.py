@@ -8,7 +8,7 @@ from app.db.session import get_sessionmaker
 from app.models.crowd import CrowdState
 from app.core.utils import utcnow
 
-from conftest import create_event, create_node
+from conftest import ORGANIZER_HEADERS, create_event, create_node
 
 
 def test_create_node(client):
@@ -29,6 +29,7 @@ def test_create_node_for_missing_event_is_not_found(client):
     response = client.post(
         "/api/events/999999/nodes",
         json={"name": "Ghost", "type": "GATE", "capacity": 100},
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
@@ -37,7 +38,7 @@ def test_create_node_for_missing_event_is_not_found(client):
 def test_list_nodes(client):
     event_id = create_event(client)
     create_node(client, event_id, name="North Gate")
-    create_node(client, event_id, name="East Zone", node_type="ZONE")
+    create_node(client, event_id, name="East Zone", node_type="VENUE")
 
     response = client.get(f"/api/events/{event_id}/nodes")
     assert response.status_code == 200
@@ -50,6 +51,7 @@ def test_invalid_node_payload_is_rejected(client):
     response = client.post(
         f"/api/events/{event_id}/nodes",
         json={"name": "Bad", "type": "GATE", "capacity": -5},
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"

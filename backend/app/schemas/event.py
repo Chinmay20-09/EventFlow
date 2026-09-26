@@ -70,3 +70,17 @@ class EventStateOut(BaseModel):
     end_time: datetime | None = None
     nodes: list[NodeStateView] = []
     active_disruptions: list[DisruptionOut] = []
+
+
+class EventLocationUpdate(BaseModel):
+    """P4 map location payload: {"bounds", "zoom", "center"}.
+
+    Shape-validation only (dict bounds/center) — the P4 map clients send
+    Leaflet-style structures whose internal shape is not constrained here.
+    """
+
+    bounds: dict
+    zoom: float = Field(ge=0, le=25)
+    center: dict
+
+    model_config = {"extra": "forbid"}
