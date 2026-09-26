@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import DigitalTwinPanel from "./components/DigitalTwinPanel"
 
 function App() {
   const [isDark, setIsDark] = useState(true)
@@ -1227,6 +1228,10 @@ Transit: ${transitCapacity}%
           </>
         )}
 
+        {/* ==================== WEATHER DIGITAL TWIN (midnight task) ==================== */}
+        {activePage === "Overview" && (
+          <DigitalTwinPanel themeClasses={themeClasses} isDark={isDark} />
+        )}
 
         {/* ==================== CROWD MONITOR ==================== */}
         {activePage === "Crowd Monitor" && (
