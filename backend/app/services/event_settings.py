@@ -16,7 +16,7 @@ from app.db.session import commit_or_fail
 from app.models.event import Event
 from app.models.settings import EventSettings
 from app.schemas.settings import EventSettingsOut, EventSettingsUpdate
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 DEFAULT_MAX_CAPACITY = 50000
 DEFAULT_ALERT_THRESHOLD = 85

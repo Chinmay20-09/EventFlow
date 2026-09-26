@@ -16,6 +16,8 @@ _TEST_DB_PATH = Path(tempfile.mkdtemp(prefix="eventflow-p3-")) / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["ENVIRONMENT"] = "test"
 os.environ.setdefault("MAX_SIMULATION_ATTEMPTS", "2")
+# JWT signing key for the auth tests (never a real secret).
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-eventflow-p3-only")
 
 # Make `backend/` importable regardless of how pytest is invoked.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -42,6 +44,22 @@ EVENT_PAYLOAD = {
     "start_time": "2026-10-10T10:00:00Z",
     "end_time": "2026-10-10T22:00:00Z",
 }
+
+
+def bearer_token(user_id: int) -> str:
+    """Mint a valid access token for a seeded user id (auth tests)."""
+    from app.core.security import create_access_token
+
+    db = get_sessionmaker()()
+    try:
+        return create_access_token(db.get(User, user_id))
+    finally:
+        db.close()
+
+
+def auth_headers(user_id: int) -> dict[str, str]:
+    """Bearer headers for a seeded user id (auth tests)."""
+    return {"Authorization": f"Bearer {bearer_token(user_id)}"}
 
 
 @pytest.fixture(scope="session")

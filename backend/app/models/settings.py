@@ -17,7 +17,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 
 class EventSettings(Base):

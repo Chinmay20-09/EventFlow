@@ -10,7 +10,7 @@ P1 owns the deterministic Crowd Engine. P3 owns the backend, persistence, API, a
 
 P3 must not recalculate P1 crowd intelligence. In particular, P3 must not independently derive occupancy, flow, density, congestion, queue size, bottlenecks, travel time, arrivals, diversion, or simulation outcomes from a P1 payload. P3 may validate declared ranges and preserve the values supplied by P1.
 
-The repository currently contains the TypeScript P1 engine and no backend, database, or API implementation. The current P1 public domain boundary is in `src/engine/types.ts`; serialization is explicitly snake_case for P2/P3 handoff. P1 remains partially complete against EV-007, EV-008, EV-010, and EV-011, so every item marked “P1 must confirm” is a contract question, not an assumed production guarantee.
+The repository currently contains the TypeScript P1 engine and no backend, database, or API implementation. The current P1 public domain boundary is in `engine/src/types.ts`; serialization is explicitly snake_case for P2/P3 handoff. P1 remains partially complete against EV-007, EV-008, EV-010, and EV-011, so every item marked “P1 must confirm” is a contract question, not an assumed production guarantee.
 
 ## 2. Event Information
 

@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 
 class Event(Base):

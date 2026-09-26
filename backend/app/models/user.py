@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 ROLE_ORGANIZER = "ORGANIZER"
 ROLE_COORDINATOR = "COORDINATOR"
@@ -15,7 +15,7 @@ VALID_ROLES = {ROLE_ORGANIZER, ROLE_COORDINATOR, ROLE_VISITOR}
 
 
 class User(Base):
-    """An MVP user. Role and identity are resolved server-side (EV-023 §4)."""
+    """An MVP user. Role is provisioned out-of-band; identity comes from auth."""
 
     __tablename__ = "users"
 

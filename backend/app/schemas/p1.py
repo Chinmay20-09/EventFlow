@@ -1,4 +1,4 @@
-"""P1 Crowd Engine payload schemas (contract: Crowd-Engine `src/engine/serialization.ts`).
+"""P1 Crowd Engine payload schemas (contract: Crowd-Engine `engine/src/serialization.ts`).
 
 P1's explicit P3-facing serializers emit snake_case JSON:
   - `serializeMetric`          -> P1CapacityMetric
@@ -14,7 +14,7 @@ Notes on typing:
   as integers and fractional values as floats — no value is rewritten.
 - Nullable P1 fields (`utilization`, `overloaded`, `density`, …) are REQUIRED
   keys that may be `null`: P1 uses `null` for missing, which is different
-  from zero (src/engine/capacity.ts `utilization()` returns null for
+  from zero (engine/src/capacity.ts `utilization()` returns null for
   null/zero capacity). Keys P1 marks optional in TypeScript (and may omit)
   are optional here too.
 - Timestamps inside P1 payloads stay strings: parsed for sanity, stored and
@@ -26,7 +26,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# --- Closed unions from src/engine/types.ts --------------------------------
+# --- Closed unions from engine/src/types.ts --------------------------------
 
 P1DensityState = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"]
 P1NodeStatus = Literal["OPEN", "CLOSED"]

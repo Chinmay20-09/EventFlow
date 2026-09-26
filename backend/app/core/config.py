@@ -65,3 +65,10 @@ def validate_settings() -> None:
         )
     if settings.access_token_expire_minutes < 1:
         raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be at least 1.")
+    if settings.environment not in ("development", "test") and not settings.secret_key:
+        raise RuntimeError(
+            "SECRET_KEY is not configured. "
+            "Set it in the environment or in backend/.env (see backend/.env.example)."
+        )
+    if settings.access_token_expire_minutes < 1:
+        raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be at least 1.")

@@ -6,8 +6,8 @@ import {
   compareScenarios,
   runSandbox,
   serializeSimulationResult,
-} from "../src/engine/index"
-import type { Disruption, SandboxInput, SimulationResult, VenueGraphInput } from "../src/engine/types"
+} from "../engine/src/index"
+import type { Disruption, SandboxInput, SimulationResult, VenueGraphInput } from "../engine/src/types"
 
 const START = "2026-09-24T00:00:00Z"
 
