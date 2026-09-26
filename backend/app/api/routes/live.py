@@ -29,7 +29,7 @@ from app.api.deps_event import EventWrite
 from app.api.routes.events import get_event_or_404
 from app.core.errors import AppError, ok
 from app.core.security import get_current_user
-from app.db.session import get_db
+from app.db.session import commit_or_fail, get_db
 from app.models.graph import Node
 from app.schemas.event import EventLocationUpdate
 from app.schemas.live import (

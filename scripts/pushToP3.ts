@@ -9,7 +9,7 @@
  *   2. A current crowd-state snapshot -> POST /api/internal/crowd-state
  *
  * Usage (all config via environment or a local `.env` — see
- * src/transport/README.md):
+ * integration/transport/README.md):
  *
  *   # Run a scenario and push the completed simulation result:
  *   npm run push:p3 -- --scenario normal --strategy-set-id 3
@@ -27,9 +27,9 @@
  * script never crashes because P3 is down.
  */
 import { readFileSync } from "node:fs"
-import { capacityMetric, runSandbox, VenueGraph } from "../src/engine/index"
-import type { CapacityMetric, SandboxInput } from "../src/engine/types"
-import { P3Client } from "../src/transport/p3Client"
+import { capacityMetric, runSandbox, VenueGraph } from "../engine/src/index"
+import type { CapacityMetric, SandboxInput } from "../engine/src/types"
+import { P3Client } from "../integration/transport/p3Client"
 
 /** Load a local `.env` if present (same convention as the P3 backend). */
 try {
@@ -94,7 +94,7 @@ function liveMetrics(occupancy: Record<string, number>): CapacityMetric[] {
 }
 
 async function main(): Promise<void> {
-  const client = new P3Client((await import("../src/transport/p3Config")).configFromEnv())
+  const client = new P3Client((await import("../integration/transport/p3Config")).configFromEnv())
   const command = process.argv[2]
 
   if (command === "--retry-queue") {

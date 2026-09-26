@@ -42,8 +42,38 @@ def test_register_success(client):
     data = body["data"]
     assert data["username"] == "newuser"
     assert data["email"] == "newuser@example.com"
-    assert data["role"] == "VISITOR"  # self-registration is always Visitor
+    assert data["role"] == "VISITOR"  # default role when `role` is omitted
     assert "password" not in str(body).lower().replace("password_hash", "")
+
+
+def test_register_as_coordinator_succeeds(client):
+    """A client (e.g. Flutter) may self-register explicitly as COORDINATOR."""
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "coordapp",
+            "email": "coordapp@example.com",
+            "password": "TestPass!2026",
+            "role": "COORDINATOR",
+        },
+    )
+    assert response.status_code == status.HTTP_201_CREATED, response.text
+    assert response.json()["data"]["role"] == "COORDINATOR"
+
+
+def test_register_role_is_case_sensitive_uppercase(client):
+    """Roles are uppercase enum values; lowercase variants are rejected."""
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "lowercoord",
+            "email": "lowercoord@example.com",
+            "password": "TestPass!2026",
+            "role": "coordinator",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_register_duplicate_username_rejected(client):
@@ -70,17 +100,30 @@ def test_register_duplicate_email_rejected(client):
 
 
 def test_register_rejects_role_escalation(client):
+    """ORGANIZER (and any unknown role) is rejected — never created silently."""
     response = client.post(
         "/api/auth/register",
         json={
             "username": "escalator",
             "email": "escalator@example.com",
             "password": "TestPass!2026",
-            "role": "COORDINATOR",  # not accepted — extra="forbid"
+            "role": "ORGANIZER",  # not registrable — provisioned out-of-band
         },
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    unknown = client.post(
+        "/api/auth/register",
+        json={
+            "username": "escalator2",
+            "email": "escalator2@example.com",
+            "password": "TestPass!2026",
+            "role": "SUPERADMIN",
+        },
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_login_with_email_succeeds(client):
