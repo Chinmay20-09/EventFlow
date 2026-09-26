@@ -292,3 +292,82 @@ P3 validates, stores, retrieves, and coordinates workflow.
 * EV-023 — Security
 * EV-024 — Error Handling
 * EV-037 — API Examples
+
+---
+
+## Addendum — P4 Aggregate & Internal Endpoints (added for the P4 frontend contract)
+
+> This addendum documents endpoints that were added to support the existing
+> P4 Command Center. Nothing above is changed. Status markers follow the
+> implementation: **fully implemented** / **mock-backed** / **dependent on
+> P1/P2/P5**.
+
+### P4 read-model endpoints (fully implemented; composed from stored rows)
+
+```text
+GET /api/events/{event_id}/dashboard
+GET /api/events/{event_id}/zones
+GET /api/events/{event_id}/alerts
+GET /api/events/{event_id}/timeline
+GET /api/events/{event_id}/predictions/forecast
+GET /api/events/{event_id}/recommendation          [MOCK-BACKED — P2 adapter]
+GET /api/events/{event_id}/settings
+PUT /api/events/{event_id}/settings               [Organizer/Coordinator only]
+```
+
+Rules these endpoints follow:
+
+* Same success/error envelope as §3.
+* They are **read models**: composed at request time from events, nodes,
+  crowd_state, disruptions, predictions, simulation_results, approvals and
+  executions. No `alerts`, `activity_log` or duplicate event-name storage
+  exists — no second source of truth.
+* `dashboard` and `zones` expose only trivial presentation ratios of stored
+  values (`current_crowd / capacity`, threshold comparisons). They never
+  include simulation state (§13 applies: simulation must not be presented
+  as live state).
+* `alerts` composes ACTIVE disruptions (stored severity verbatim), stored
+  crowd ≥ stored alert threshold, and — when the organizer enabled auto AI
+  alerts — stored predictions ≥ threshold. P3 generates no AI alert.
+* `recommendation` passes through the P2 adapter unchanged; while the mock
+  is active the payload carries the `[MOCK P2]` marker.
+* `risk_level` in the dashboard is `null` until a producer is agreed — P3
+  does not invent risk.
+* `PUT settings` requires an authenticated Organizer or Coordinator
+  (Visitor → `FORBIDDEN`, missing/unknown identity → `UNAUTHORIZED`).
+  Settings are event-scoped only; backend environment configuration is not
+  reachable (see EV-029 addendum).
+
+### P1 ingestion endpoints
+
+```text
+POST /api/internal/crowd                  [fully implemented — awaiting P1 payloads]
+POST /api/internal/predictions            [fully implemented; `forecast_points` series is DRAFT]
+```
+
+* `POST /api/internal/crowd`: P1 sends the calculated crowd state; P3
+  validates and stores the single current row per node (idempotent
+  last-write-wins upsert). P3 does not calculate crowd state.
+* Edge/movement flow ingestion does **not exist yet** — marked
+  `P1 INPUT REQUIRED` pending P1 confirmation.
+
+### Strategy Set create extension (dependent on P2)
+
+`POST /api/events/{event_id}/strategy-sets` accepts three optional fields
+stored **verbatim**: `name`, `description`, `risk_level`. P2 supplies them;
+P3 never generates strategy names, descriptions or risk levels.
+
+### Simulation result extension (dependent on P1)
+
+`GET /api/strategy-sets/{id}/simulation` now also returns
+`predicted_metrics` (nullable JSON). The shape is **DRAFT**; while the real
+P1 engine is unavailable the value comes from the clearly marked
+`[MOCK P1]` adapter.
+
+### Explicitly NOT present (unchanged rules)
+
+* no generic `PATCH`, no generic `DELETE`, no `/execute` (§12, §16, §17);
+* no user-facing endpoint for `EXECUTING → COMPLETED/FAILED` — execution
+  completion remains a service-level action pending a documented P5
+  reporting contract.
+

@@ -22,5 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-Docs/P1_CROWD_DISRUPTION_ENGINE.md
-Fix_phase.md
+
+# Python backend
+backend/.venv/
+backend/.env
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# P1→P3 transport local state (never commit queue contents or secrets)
+.p3-queue.jsonl
+.env

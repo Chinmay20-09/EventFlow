@@ -348,4 +348,55 @@ The controlled API action must enforce the transition.
 - EV-015 — State Machine
 - EV-016 — API
 
+---
+
+## Addendum — Fields/Entities added for the P4 frontend contract
+
+> Additive only. No existing entity, field or relationship above is changed.
+
+### New entity: EventSettings
+
+Required by the existing P4 Settings screen (event name, maximum capacity,
+alert threshold, auto AI alerts):
+
+```text
+settings_id
+event_id        (FK → events, unique)
+max_capacity    (default 50000)
+alert_threshold (default 85)
+auto_ai_alerts  (default true)
+updated_at
+```
+
+One row per event, created on first save. `event_name` is **not** stored
+here — it remains the `Event.name` field (single source of truth).
+This is event-scoped operational data, not backend configuration
+(see EV-029 addendum).
+
+### New nullable fields on existing entities
+
+```text
+StrategySet.name / description / risk_level
+    Optional presentation metadata supplied by P2 and stored verbatim.
+    P3 never generates strategy names, descriptions or risk levels.
+
+StrategySet attempt tracking (already required by EV-015 §7)
+    attempt_count, failure_reason — implemented as specified.
+
+SimulationResult.predicted_metrics   (JSON, nullable)
+    Structured simulation outcome supplied by P1 (DRAFT shape).
+    Mock-backed while the real P1 engine is unavailable.
+
+Prediction.forecast_points   (JSON, nullable)
+    Forecast series supplied by P1 for the P4 60-minute chart (DRAFT
+    contract). P3 stores points verbatim and never generates them.
+```
+
+### Explicitly still NOT stored
+
+No `alerts` table, no `activity_log` table, no edge-flow/crowd-flow table,
+no historical crowd tables — alerts and the activity timeline are composed
+at read time from the entities above, and edge flow is `P1 INPUT REQUIRED`
+(pending P1 confirmation — not implemented).
+
     

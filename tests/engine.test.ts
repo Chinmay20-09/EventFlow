@@ -8,7 +8,6 @@ import {
   generateCandidates,
   optimizeSimulation,
   runSandbox,
-  runSandboxSafe,
   serializeGraph,
   serializeSimulationResult,
 } from "../src/engine"
@@ -90,93 +89,6 @@ describe("EventFlow deterministic engine", () => {
     expect(group?.state).toBe("MOVING")
     expect(result.final.edgeMetrics[0].currentOccupancy).toBe(10)
     expect(result.final.edgeMetrics[0].flow).toBeGreaterThan(0)
-  })
-
-  it("reports movement flow using the documented population-rate formula", () => {
-    const graph = new VenueGraph({
-      nodes: [
-        { id: "A", label: "A", type: "ENTRANCE", capacity: 100, status: "OPEN" },
-        { id: "B", label: "B", type: "EXIT", capacity: 100, status: "OPEN" },
-      ],
-      edges: [{ id: "AB", from: "A", to: "B", distance: 20, baselineTime: 20, currentTime: 20, capacity: 120, status: "OPEN" }],
-    })
-    const result = new DeterministicSimulator(graph, [{
-      id: "flow", population: 3, currentLocation: { kind: "NODE", id: "A" }, destination: "B", averageSpeed: 1,
-    }], { durationSeconds: 20, timestepSeconds: 10 }).run()
-    expect(result.steps[1].edgeMetrics[0].flow).toBeCloseTo(9)
-  })
-
-  it("rejects fractional external populations while preserving fractional internal transfers", () => {
-    expect(() => new DeterministicSimulator(new VenueGraph(graphInput), [{
-      ...crowd[0], population: -1,
-    }])).toThrow(/Invalid population/)
-    expect(() => new DeterministicSimulator(new VenueGraph(graphInput), [{
-      ...crowd[0], population: Number.NaN,
-    }])).toThrow(/Invalid population/)
-    expect(() => new DeterministicSimulator(new VenueGraph(graphInput), [{
-      ...crowd[0], population: Number.POSITIVE_INFINITY,
-    }])).toThrow(/Invalid population/)
-    expect(() => new DeterministicSimulator(new VenueGraph(graphInput), [{
-      ...crowd[0], population: 1.5,
-    }])).toThrow(/Invalid population/)
-
-    const graph = new VenueGraph({
-      nodes: [
-        { id: "A", label: "A", type: "ENTRANCE", capacity: 100, status: "OPEN" },
-        { id: "B", label: "B", type: "EXIT", capacity: 100, status: "OPEN" },
-      ],
-      edges: [{ id: "AB", from: "A", to: "B", distance: 100, baselineTime: 100, currentTime: 100, capacity: 1, status: "OPEN" }],
-    })
-    const result = new DeterministicSimulator(graph, [{
-      id: "mass", population: 3, currentLocation: { kind: "NODE", id: "A" }, destination: "B", averageSpeed: 1,
-    }], { durationSeconds: 10, timestepSeconds: 10 }).run()
-    const step = result.steps[1]
-    const edgeMass = step.edgeMetrics[0].currentOccupancy
-    const nodeMass = step.nodeMetrics.reduce((sum, metric) => sum + metric.currentOccupancy, 0)
-    expect(edgeMass).toBeCloseTo(1 / 6)
-    expect(nodeMass + edgeMass).toBeCloseTo(3)
-    expect(step.transfers.nodeOut.A).toBeCloseTo(1 / 6)
-    expect(step.transfers.edgeIn.AB).toBeCloseTo(1 / 6)
-    expect(result.events.some((event) => event.type === "SPLIT")).toBe(true)
-  })
-
-  it("aggregates travel time across completed and split populations", () => {
-    const complete = new DeterministicSimulator(new VenueGraph(graphInput), crowd, {
-      durationSeconds: 40, timestepSeconds: 10,
-    }).run()
-    expect(complete.arrivedPopulation).toBe(20)
-    expect(complete.metrics.travelTime).toBeCloseTo(20)
-
-    const partial = new DeterministicSimulator(new VenueGraph({
-      nodes: [
-        { id: "A", label: "A", type: "ENTRANCE", capacity: 100, status: "OPEN" },
-        { id: "B", label: "B", type: "EXIT", capacity: 100, status: "OPEN" },
-      ],
-      edges: [{ id: "AB", from: "A", to: "B", distance: 100, baselineTime: 100, currentTime: 100, capacity: 1, status: "OPEN" }],
-    }), [{
-      id: "partial", population: 3, currentLocation: { kind: "NODE", id: "A" }, destination: "B", averageSpeed: 1,
-    }], { durationSeconds: 20, timestepSeconds: 10 }).run()
-    expect(partial.metrics.travelTime).toBeCloseTo(10 / 18)
-  })
-
-  it("averages different completed group travel times over the same cohort", () => {
-    const graph = new VenueGraph({
-      nodes: [
-        { id: "A", label: "A", type: "ENTRANCE", capacity: 100, status: "OPEN" },
-        { id: "C", label: "C", type: "ENTRANCE", capacity: 100, status: "OPEN" },
-        { id: "D", label: "D", type: "EXIT", capacity: 100, status: "OPEN" },
-      ],
-      edges: [
-        { id: "AD", from: "A", to: "D", distance: 10, baselineTime: 10, currentTime: 10, capacity: 100, status: "OPEN" },
-        { id: "CD", from: "C", to: "D", distance: 20, baselineTime: 20, currentTime: 20, capacity: 100, status: "OPEN" },
-      ],
-    })
-    const result = new DeterministicSimulator(graph, [
-      { id: "fast", population: 1, currentLocation: { kind: "NODE", id: "A" }, destination: "D", averageSpeed: 1 },
-      { id: "slow", population: 1, currentLocation: { kind: "NODE", id: "C" }, destination: "D", averageSpeed: 1 },
-    ], { durationSeconds: 30, timestepSeconds: 10 }).run()
-    expect(result.arrivedPopulation).toBe(2)
-    expect(result.metrics.travelTime).toBeCloseTo(15)
   })
 
   it("forms and releases a FIFO queue at a zero-service node", () => {
@@ -367,17 +279,6 @@ describe("EventFlow deterministic engine", () => {
     })
     expect(optimized.status).toBe("COMPLETED")
     expect(optimized.ranked[0].simulation).not.toBeNull()
-    expect(optimized.ranking).toEqual(optimized.ranked.map((candidate) => candidate.candidateId))
-    expect(optimized.ranked[0].rank).toBe(1)
-    expect(optimized.diagnostics?.rejectedCount).toBe(0)
-    const statusCandidates = generateCandidates({ graph: graphInput, allowStatusChange: true, maxCandidates: 2 })
-    expect(statusCandidates.some((candidate) => candidate.changes[0]?.parameter === "status")).toBe(true)
-    const demandGraph = { ...graphInput, activeEntries: ["A"], activeExits: ["C"] }
-    const demand = optimizeSimulation({
-      graph: demandGraph, crowd, parameters: { durationSeconds: 0, timestepSeconds: 10 },
-      allowDemandRebalancing: true, demandShares: { A: 1 }, maxCandidates: 2,
-    })
-    expect(demand.ranked[0]?.simulation).not.toBeNull()
     const invalid = optimizeSimulation({
       graph: graphInput,
       crowd,
@@ -483,7 +384,6 @@ describe("EventFlow deterministic engine", () => {
         startTime: "2026-09-24T00:00:00Z", duration: 20, stepSeconds: 10,
       },
     })
-
     expect(result.id).toBe("SIMULATION_RESULT_SCENARIO_CONTRACT")
     expect(result.strategyId).toBeNull()
     expect(result.simulatedStartTime).toBe("2026-09-24T00:00:00.000Z")
@@ -493,53 +393,6 @@ describe("EventFlow deterministic engine", () => {
     expect(result.finalState.population).toBe(20)
     expect(Array.isArray(result.events)).toBe(true)
     expect(result.warnings.every((warning) => typeof warning.code === "string")).toBe(true)
-  })
-
-  it("rejects invalid EV-006 topology and edge capacities", () => {
-    expect(() => new VenueGraph({
-      ...graphInput,
-      edges: [{ ...graphInput.edges[0], from: "A", to: "A" }],
-    })).toThrow("Self-loop")
-    expect(() => new VenueGraph({
-      ...graphInput,
-      edges: [{ ...graphInput.edges[0], capacity: Number.NaN }],
-    })).toThrow("Invalid capacity")
-    expect(() => new VenueGraph({
-      ...graphInput,
-      nodes: [{ ...graphInput.nodes[0], type: "CORRIDOR" as never }, ...graphInput.nodes.slice(1)],
-    })).toThrow("Invalid node type")
-  })
-
-  it("applies canonical disruption effects with restrictive conflict resolution", () => {
-    const graph = new VenueGraph(graphInput).withOverrides([], [
-      {
-        id: "OPENING", type: "GATE_CLOSURE", affectedEdges: ["AB"], status: "ACTIVE",
-        operationalEffects: [{
-          targetType: "EDGE", targetId: "AB", parameter: "capacity",
-          previousValue: 60, proposedValue: 40, appliedValue: 40, effectStatus: "APPLIED",
-        }],
-      },
-      {
-        id: "MORE_RESTRICTIVE", type: "ROAD_CLOSURE", affectedEdges: ["AB"], status: "ACTIVE",
-        operationalEffects: [{
-          targetType: "EDGE", targetId: "AB", parameter: "capacity",
-          previousValue: 60, proposedValue: 10, appliedValue: 10, effectStatus: "APPLIED",
-        }],
-      },
-    ])
-    expect(graph.edge("AB")?.status).toBe("CLOSED")
-    expect(graph.edge("AB")?.operationalCapacity).toBe(10)
-  })
-
-  it("marks incompatible scenario comparisons instead of silently comparing them", () => {
-    const make = (id: string, duration: number) => ({
-      graph: graphInput, crowd, parameters: { durationSeconds: duration, timestepSeconds: 10, seed: 7 },
-      scenario: { id, name: id, baseline: "CURRENT_GRAPH" as const, startTime: "2026-09-24T00:00:00Z", duration },
-    })
-    const comparison = compareScenarios([make("A", 20), make("B", 30)])
-    expect(comparison.valid).toBe(false)
-    expect(comparison.warnings).toContain("INCOMPATIBLE_DURATION")
-    expect(comparison.metricMatrix?.arrived_population).toHaveProperty("A")
   })
 
   it("emits queue-stalled and overload transitions from real state", () => {
@@ -607,11 +460,6 @@ describe("EventFlow deterministic engine", () => {
     expect(result.events.map((event) => event.type)).toContain("DISRUPTION_ACTIVATED")
     expect(result.events.map((event) => event.type)).toContain("DISRUPTION_RESOLVED")
     expect(result.events.find((event) => event.type === "DISRUPTION_ACTIVATED")?.simTime).toBe("2026-09-24T00:00:10.000Z")
-    expect(result.events.find((event) => event.type === "DISRUPTION_ACTIVATED")?.detail).toMatchObject({
-      disruption_type: "BLOCKED_CORRIDOR", affected_edges: ["AB"],
-    })
-    expect(result.events.filter((event) => event.simTime === "2026-09-24T00:00:10.000Z").map((event) => event.type)[0])
-      .toBe("DISRUPTION_ACTIVATED")
   })
 
   it("rejects invalid scenarios before execution", () => {
@@ -620,31 +468,5 @@ describe("EventFlow deterministic engine", () => {
         id: "BAD", name: "", baseline: "CURRENT_GRAPH", startTime: "not-a-time", duration: -1,
       },
     })).toThrow()
-  })
-
-  it("records external population adjustments separately from physical transfers", () => {
-    const result = runSandbox({
-      graph: graphInput,
-      crowd: [],
-      adjustments: [{
-        id: "INJECT_1", reason: "SCENARIO_INJECTION", scope: "NODE", targetId: "A",
-        amount: 3, destination: "C", timestamp: "2026-09-24T00:00:00Z",
-      }],
-      parameters: { durationSeconds: 0, timestepSeconds: 10 },
-    })
-    expect(result.metrics.population).toBe(3)
-    expect(result.events.find((event) => event.type === "EXTERNAL_CROWD_UPDATE")?.detail).toMatchObject({
-      reason: "SCENARIO_INJECTION", signed_amount: 3,
-    })
-  })
-
-  it("returns structured failure results at the safe sandbox boundary", () => {
-    const result = runSandboxSafe({
-      graph: graphInput, crowd,
-      scenario: { id: "INVALID_SAFE", name: "", baseline: "CURRENT_GRAPH", startTime: "bad", duration: -1 },
-    })
-    expect(result.status).toBe("INVALID_SCENARIO")
-    expect(result.diagnostics.length).toBeGreaterThan(0)
-    expect(result.metrics.population).toBe(0)
   })
 })

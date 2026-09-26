@@ -165,4 +165,30 @@ This is safer than allowing the application to fail later on its first database 
 - EV-024 — Error Handling
 - EV-038 — Developer Setup
 
+---
+
+## Addendum — Event Settings vs Backend Configuration (clarification)
+
+§9 states that no configuration dashboard is required for the MVP. That
+refers to **backend/environment configuration** (§3): `DATABASE_URL`,
+`API_HOST`, `API_PORT`, `ENVIRONMENT`, `MAX_SIMULATION_ATTEMPTS` — none of
+which is or must ever be editable through any API.
+
+The existing P4 frontend additionally contains an organizer **Settings
+screen** for event-scoped values (event name, maximum capacity, alert
+threshold, auto AI alerts). Because the screen exists, P3 implements the
+smallest representation that supports it:
+
+```text
+GET /api/events/{event_id}/settings
+PUT  /api/events/{event_id}/settings
+```
+
+backed by the event-scoped `event_settings` entity (EV-005 addendum).
+Conflict decision recorded in `backend/IMPLEMENTATION_NOTES.md` §3: the
+frontend required the capability, so the minimal event-scoped storage was
+implemented; it is operational data, not system configuration, and it does
+not replace or alter §2–§7 of this document. Writes require an
+authenticated Organizer or Coordinator; Visitors are read-only (EV-023).
+
     

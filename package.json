@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:crowd": "tsx scripts/test_Crowd.ts",
+    "push:p3": "tsx scripts/pushToP3.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -22,10 +23,9 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
-    "tsx": "^4.23.15",
+    "tsx": "^4.20.6",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0",
-    "vitest": "^5.0.1"
-    ,"tsx": "^4.20.6"
+    "vitest": "^5.0.1",
+    "vite": "^8.3.0"
   }
 }

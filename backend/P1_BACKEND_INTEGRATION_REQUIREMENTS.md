@@ -1,7 +1,7 @@
 # P1 → P3 Crowd Engine Integration Requirements
 
-**Status:** Requirements and open questions  
-**Audience:** P1 Crowd Engine, P3 Backend/API/Data, P4 frontend, and P2 prediction/strategy owners  
+**Status:** Requirements and open questions
+**Audience:** P1 Crowd Engine, P3 Backend/API/Data, P4 frontend, and P2 prediction/strategy owners
 **Scope:** Contract discovery and integration planning only. This document does not implement an API, database, or backend adapter.
 
 ## 1. Purpose
