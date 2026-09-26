@@ -22,6 +22,7 @@ from app.schemas.prediction import (
     PredictionOut,
 )
 from app.schemas.settings import EventSettingsOut, EventSettingsUpdate
+from app.schemas.user import LoginRequest, RegisterRequest, TokenOut, UserOut
 from app.schemas.strategy import (
     ApprovalActionOut,
     ApprovalOut,
@@ -75,5 +76,9 @@ __all__ = [
     "StrategySetCreate",
     "StrategySetOut",
     "TimelineEntryOut",
+    "LoginRequest",
+    "RegisterRequest",
+    "TokenOut",
+    "UserOut",
     "ZoneOut",
 ]

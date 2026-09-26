@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # set the SAME value on both sides (P3_API_KEY in the P1 transport env).
     p3_api_key: str = ""
 
+    # User authentication (JWT bearer tokens for /api/auth and protected
+    # endpoints). SECRET_KEY signs the tokens — set it from the environment;
+    # a deployed instance must never run on the insecure default. Empty also
+    # disables token login for the seeded users (password_hash NULL). Dev
+    # X-User-Id identity resolution is unchanged.
+    secret_key: str = ""
+    access_token_expire_minutes: int = 60
+
 
 settings = Settings()
 
@@ -46,3 +54,10 @@ def validate_settings() -> None:
         )
     if settings.max_simulation_attempts < 1:
         raise RuntimeError("MAX_SIMULATION_ATTEMPTS must be at least 1.")
+    if settings.environment not in ("development", "test") and not settings.secret_key:
+        raise RuntimeError(
+            "SECRET_KEY is not configured. "
+            "Set it in the environment or in backend/.env (see backend/.env.example)."
+        )
+    if settings.access_token_expire_minutes < 1:
+        raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be at least 1.")

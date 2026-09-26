@@ -440,3 +440,60 @@ replace the mock at `POST /api/internal/simulations` (see §5).
   PostgreSQL (`strategy_sets`, `strategies`) — see the test log in this branch.
 - Tests: `backend/tests/test_strategy_metadata.py` (verbatim storage),
   `backend/tests/test_strategy_workflow.py` (state machine).
+
+## 11. User authentication (JWT bearer) — resolves audit item N7 for the MVP
+
+The previously-pending authentication decision (§3, item N7) is now
+implemented with the smallest contract-preserving design. Existing behavior
+is not replaced: the development `X-User-Id` header continues to work
+unchanged (EV-023 §4), so all prior integrations and tests are unaffected.
+
+**Mechanism.** `POST /api/auth/login` verifies a bcrypt hash and returns an
+HS256 JWT access token (`Authorization: Bearer <token>`). The token carries
+only `sub` (user id), `iat` and `exp`; identity AND role are always
+re-resolved from the stored `users` table — the client can never assert a
+role. Configuration is environment-only: `SECRET_KEY` (required outside
+development/test — startup fails fast) and `ACCESS_TOKEN_EXPIRE_MINUTES`
+(default 60). Secrets are never hardcoded or committed.
+
+**Endpoints** (documented envelope; tagged `auth` in Swagger):
+
+| Endpoint | Auth | Success | Errors |
+|---|---|---|---|
+| `POST /api/auth/register` | none | 201 `{UserOut}` | 409 `CONFLICT` (duplicate username/email), 422 `VALIDATION_ERROR` |
+| `POST /api/auth/login` | none | 200 `{access_token, token_type, user}` | 401 `UNAUTHORIZED` (generic "Invalid credentials" — no user enumeration) |
+| `GET /api/auth/me` | token or X-User-Id | 200 `{UserOut}` | 401 `UNAUTHORIZED` |
+
+**Authorization (unchanged rules, new credential type).** Approve/reject
+remain Coordinator-only (`get_current_coordinator`); settings writes accept
+Organizer or Coordinator (`get_current_operator`); Visitors stay read-only;
+reads remain public (EV-023 §7, §10). Protected endpoints now accept BOTH
+`Authorization: Bearer <token>` and the dev `X-User-Id` header; without any
+identity they return 401 `UNAUTHORIZED`, with the wrong role 403 `FORBIDDEN`.
+The state machine and approval workflow are untouched.
+
+**Registration.** `RegisterRequest` has NO role field (`extra="forbid"`) —
+every self-registered account is a VISITOR; Organizer/Coordinator accounts
+are provisioned out-of-band by an operator (no privilege escalation).
+Passwords are stored only as bcrypt hashes (`password_hash`, never
+plaintext); hashes never appear in any response (`UserOut`).
+
+**Database (single `users` table — no second auth model).** Two nullable
+columns were added to the existing model: `email VARCHAR(255) UNIQUE`
+(auth login identifier) and `password_hash VARCHAR(255) NULL` (seeded/dev
+users keep `NULL` and cannot log in by password). Bootstrap remains
+`create_all`; `app/db/migrations.py::run_startup_migrations` (called from
+the lifespan after `create_all`) inspects the live table and adds the two
+columns transactionally on PostgreSQL when missing — the documented
+Alembic-replacement for this MVP (§2). Idempotent on every start.
+
+**Swagger/OpenAPI.** The three auth endpoints appear under `/docs`; the
+`HTTPBearer` scheme (`auto_error=False`, so the dev header stays usable)
+marks `/auth/me`, approve/reject and settings-PUT with the security
+requirement — the Swagger UI "Authorize" button works. Public reads show no
+lock. New dependencies: `bcrypt`, `pyjwt`, `email-validator`
+(requirements.txt). Tests: `backend/tests/test_auth.py` (23 cases).
+
+**Remaining auth issues (out of scope here):** refresh tokens / logout
+(stateless JWTs cannot be revoked server-side), rate limiting on
+`/api/auth/*`, password reset, and wiring the P4 login screen.
