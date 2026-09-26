@@ -1,18 +1,4 @@
 import { useEffect, useState } from "react"
-import {
-  eventApi,
-  setApiUserId,
-  type AlertRecord,
-  type ApiHealth,
-  type DashboardData,
-  type EventRecord,
-  type EventSettings,
-  type ForecastZone,
-  type Recommendation,
-  type SimulationResult,
-  type StrategySet,
-  type TimelineRecord,
-} from "./api"
 
 function App() {
   const [isDark, setIsDark] = useState(true)
@@ -22,30 +8,17 @@ function App() {
   const [reviewOpen, setReviewOpen] = useState(false)
   const [strategyApproved, setStrategyApproved] = useState(false)
   const [executionStatus, setExecutionStatus] = useState("Ready")
+  const [executionProgress, setExecutionProgress] = useState(0)
+  const [liveVisitors, setLiveVisitors] = useState(18452)
   const [eventName, setEventName] = useState("Mumbai Music Festival")
   const [maxCapacity, setMaxCapacity] = useState(50000)
   const [alertThreshold, setAlertThreshold] = useState(85)
   const [autoAlerts, setAutoAlerts] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [backendUserId, setBackendUserId] = useState(import.meta.env.VITE_P3_USER_ID ?? "")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [loginError, setLoginError] = useState("")
-  const [apiError, setApiError] = useState("")
-  const [apiLoading, setApiLoading] = useState(false)
-  const [hasNoEvents, setHasNoEvents] = useState(false)
-  const [events, setEvents] = useState<EventRecord[]>([])
-  const [backendHealth, setBackendHealth] = useState<ApiHealth | null>(null)
-  const [eventId, setEventId] = useState<number | null>(null)
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
-  const [alerts, setAlerts] = useState<AlertRecord[]>([])
-  const [activityLog, setActivityLog] = useState<TimelineRecord[]>([])
-  const [settings, setSettings] = useState<EventSettings | null>(null)
-  const [forecasts, setForecasts] = useState<ForecastZone[]>([])
-  const [recommendation, setRecommendation] = useState<Recommendation | null>(null)
-  const [strategySets, setStrategySets] = useState<StrategySet[]>([])
-  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
-  const [settingsSaving, setSettingsSaving] = useState(false)
-  const [actionSaving, setActionSaving] = useState(false)
   const [selectedNode, setSelectedNode] = useState("A")
 
   const themeClasses = (classes: string) => {
@@ -78,198 +51,185 @@ function App() {
     return addThemeTransition(lightClasses)
   }
 
-  const networkCapacity = dashboard?.stats.network_capacity_pct ?? null
-  const forecastChartZone = forecasts.find((zone) => zone.forecast_points.length > 1)
-  const forecastChartCoordinates = forecastChartZone
-    ? forecastChartZone.forecast_points
-        .filter((point) => point.predicted_occupancy_pct !== null)
-        .map((point) => {
-          const maxHorizon = Math.max(...forecastChartZone.forecast_points.map((item) => item.horizon_seconds), 1)
-          const occupancy = Math.max(0, Math.min(point.predicted_occupancy_pct ?? 0, 100))
-          return {
-            x: 50 + (point.horizon_seconds / maxHorizon) * 510,
-            y: 180 - (occupancy / 100) * 160,
-          }
-        })
-    : []
-  const zones = dashboard?.zones ?? []
-  const zoneByName = (name: string) => zones.find((zone) => zone.name.toLowerCase() === name.toLowerCase())
-  const northGateCrowd = zoneByName("North Gate")?.occupancy_pct ?? null
-  const zoneForNode = (node: string) =>
-    zoneByName(({ A: "North Gate", B: "Central Zone", C: "East Zone", D: "Transit" } as const)[node as "A" | "B" | "C" | "D"] ?? "")
-  const formatPercent = (value: number | null | undefined) =>
-    value == null ? "No data" : `${Math.round(value)}%`
-  const selectedStrategySet = strategySets.find(
-    (strategySet) => String(strategySet.strategy_set_id) === selectedStrategy,
-  )
+  const northGateCrowd =
+  selectedStrategy === "A"
+    ? 68
+    : selectedStrategy === "B"
+    ? 73
+    : 92
 
-  const refreshBackendData = async (id: number) => {
-    try {
-      const [dashboardData, alertData, timelineData, settingsData, forecastData, recommendationData, strategyData] =
-        await Promise.all([
-          eventApi.getDashboard(id),
-          eventApi.getAlerts(id),
-          eventApi.getTimeline(id),
-          eventApi.getSettings(id),
-          eventApi.getForecast(id),
-          eventApi.getRecommendation(id),
-          eventApi.getStrategySets(id),
-        ])
-      setDashboard(dashboardData)
-      setAlerts(alertData)
-      setActivityLog(timelineData)
-      setSettings(settingsData)
-      setForecasts(forecastData.zones)
-      setRecommendation(recommendationData)
-      setStrategySets(strategyData)
-      setEvents((current) => current.map((event) => event.event_id === id ? dashboardData.event : event))
-      setEventName(settingsData.event_name)
-      setMaxCapacity(settingsData.max_capacity)
-      setAlertThreshold(settingsData.alert_threshold)
-      setAutoAlerts(settingsData.auto_ai_alerts)
-      setExecutionStatus(
-        dashboardData.execution.status === "Ready"
-          ? "Ready"
-          : dashboardData.execution.status.toLowerCase(),
-      )
-      setApiError("")
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Failed to load event data.")
-    }
-  }
+const eastZoneCrowd =
+  selectedStrategy === "A"
+    ? 68
+    : 54
+   
+const transitCapacity =
+  selectedStrategy === "A"
+    ? 72
+    : selectedStrategy === "B"
+    ? 61
+    : 64    
+  
+  const [activityLog, setActivityLog] = useState([
+    {
+      time: "2 min ago",
+      message: "Crowd buildup detected at North Gate",
+      type: "alert",
+    },
+    {
+      time: "5 min ago",
+      message: "Transit capacity decreased to 64%",
+      type: "warning",
+    },
+    {
+      time: "8 min ago",
+      message: "Weather disruption detected in East Zone",
+      type: "warning",
+    },
+  ])
 
   useEffect(() => {
-    if (eventId === null || !isLoggedIn) return
-    const initialRefresh = setTimeout(() => void refreshBackendData(eventId), 0)
-    const interval = setInterval(() => void refreshBackendData(eventId), 10000)
-    return () => {
-      clearTimeout(initialRefresh)
-      clearInterval(interval)
-    }
-  }, [eventId, isLoggedIn])
-
-  const handleLogin = async () => {
-    setApiLoading(true)
-    setLoginError("")
-    setApiUserId(backendUserId)
-    try {
-      const [health, availableEvents] = await Promise.all([eventApi.getHealth(), eventApi.listEvents()])
-      setBackendHealth(health)
-      setEvents(availableEvents)
-      if (availableEvents.length === 0) {
-        setHasNoEvents(true)
-        return
-      }
-      setHasNoEvents(false)
-      setEventId(availableEvents[0].event_id)
-      setIsLoggedIn(true)
-    } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Could not connect to the EventFlow API.")
-    } finally {
-      setApiLoading(false)
-    }
+  if (executionStatus !== "Executing") {
+    return
   }
 
-  const handleCreateStarterEvent = async () => {
-    setApiLoading(true)
-    setLoginError("")
-    try {
-      const start = new Date()
-      const end = new Date(start.getTime() + 8 * 60 * 60 * 1000)
-      const createdEvent = await eventApi.createEvent({
-        name: eventName,
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-      })
-      setEvents([createdEvent])
-      setEventId(createdEvent.event_id)
-      setHasNoEvents(false)
-      setIsLoggedIn(true)
-      const starterNodes = [
-        { name: "North Gate", type: "GATE", capacity: 5000, status: "OPEN" },
-        { name: "Central Zone", type: "ZONE", capacity: 30000, status: "OPEN" },
-        { name: "East Zone", type: "ZONE", capacity: 10000, status: "OPEN" },
-        { name: "Transit", type: "TRANSIT", capacity: 5000, status: "OPEN" },
+  const interval = setInterval(() => {
+    setExecutionProgress((current) => {
+      const nextProgress = Math.min(current + 10, 100)
+
+      if (nextProgress === 100) {
+        setExecutionStatus("Completed")
+
+        setActivityLog((currentLog) => [
+          {
+            time: "Just now",
+            message: `Strategy ${selectedStrategy} execution completed`,
+            type: "success",
+          },
+          ...currentLog,
+        ])
+      }
+
+      return nextProgress
+    })
+  }, 1000)
+
+  return () => clearInterval(interval)
+}, [executionStatus, selectedStrategy])
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    setLiveVisitors((current) => {
+      const change = Math.floor(Math.random() * 9) - 4
+      return Math.max(18000, current + change)
+    })
+  }, 2000)
+
+  return () => clearInterval(interval)
+}, [])
+  
+const alerts =
+  selectedStrategy === "A"
+    ? [
+        {
+          type: "Crowd Flow",
+          title: "Crowd successfully redirected",
+          location: "North Gate",
+          severity: "LOW",
+          time: "Today • 6:45 PM",
+          description: "Pedestrian congestion has reduced after rerouting.",
+          action: "Continue monitoring for the next 15 minutes.",
+        },
+        {
+          type: "Transit",
+          title: "Transit operating efficiently",
+          location: "Central Station",
+          severity: "LOW",
+          time: "Today • 6:47 PM",
+          description: "Public transport capacity is stable.",
+          action: "No immediate intervention required.",
+        },
       ]
-      for (const node of starterNodes) {
-        await eventApi.createNode(createdEvent.event_id, node)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not create the starter event."
-      setLoginError(message)
-      setApiError(message)
-    } finally {
-      setApiLoading(false)
-    }
+    : selectedStrategy === "B"
+    ? [
+        {
+          type: "Entry Control",
+          title: "Additional gate opened",
+          location: "North Gate",
+          severity: "MEDIUM",
+          time: "Today • 6:45 PM",
+          description: "A new entry gate has increased visitor throughput.",
+          action: "Deploy 2 staff members to supervise entry.",
+        },
+        {
+          type: "Crowd Flow",
+          title: "Entry flow stabilizing",
+          location: "Central Station",
+          severity: "LOW",
+          time: "Today • 6:47 PM",
+          description: "Visitor movement is becoming evenly distributed.",
+          action: "Continue live monitoring.",
+        },
+      ]
+    : [
+        {
+          type: "Crowd Density",
+          title: "Crowd buildup detected",
+          location: "North Gate",
+          severity: "HIGH",
+          time: "Today • 6:42 PM",
+          description: "Crowd utilization has exceeded 90% capacity.",
+          action: "Redirect visitors or open an additional gate.",
+        },
+        {
+          type: "Transit Capacity",
+          title: "Transit capacity decreasing",
+          location: "Central Station",
+          severity: "MEDIUM",
+          time: "Today • 6:39 PM",
+          description: "Passenger movement has slowed significantly.",
+          action: "Increase transport frequency if available.",
+        },
+        {
+          type: "Weather",
+          title: "Weather disruption possible",
+          location: "East Zone",
+          severity: "MEDIUM",
+          time: "Today • 6:36 PM",
+          description: "Light rainfall may affect outdoor movement.",
+          action: "Prepare sheltered routing for attendees.",
+        },
+      ]
+
+  const handleLogin = () => {
+  if (!email.trim() || !password.trim()) {
+    setLoginError("Please enter email and password")
+    return
   }
 
-  const handleSaveSettings = async () => {
-    if (eventId === null) return
-    setSettingsSaving(true)
-    try {
-      const updated = await eventApi.updateSettings(eventId, {
-        event_name: eventName,
-        max_capacity: maxCapacity,
-        alert_threshold: alertThreshold,
-        auto_ai_alerts: autoAlerts,
-      })
-      setSettings(updated)
-      setEventName(updated.event_name)
-      setApiError("")
-      await refreshBackendData(eventId)
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Could not save settings.")
-    } finally {
-      setSettingsSaving(false)
-    }
-  }
+  setLoginError("")
+  setIsLoggedIn(true)
+}
 
-  const handleReviewStrategy = async () => {
-    if (!selectedStrategySet) return
-    setActionSaving(true)
-    try {
-      if (selectedStrategySet.simulation_result_id !== null) {
-        setSimulationResult(await eventApi.getSimulation(selectedStrategySet.strategy_set_id))
-      } else {
-        await eventApi.simulateStrategySet(selectedStrategySet.strategy_set_id)
-        setSimulationResult(await eventApi.getSimulation(selectedStrategySet.strategy_set_id))
-      }
-      setReviewOpen(true)
-      if (eventId !== null) await refreshBackendData(eventId)
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Could not simulate this strategy.")
-    } finally {
-      setActionSaving(false)
-    }
-  }
+const handleShareMap = async () => {
+  const mapData = `
+EventFlow Crowd Map
 
-  const handleApproveStrategy = async () => {
-    if (!selectedStrategySet) return
-    setActionSaving(true)
-    try {
-      await eventApi.approveStrategySet(selectedStrategySet.strategy_set_id)
-      setStrategyApproved(true)
-      setReviewOpen(false)
-      setSandboxOpen(false)
-      if (eventId !== null) await refreshBackendData(eventId)
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Could not approve this strategy.")
-    } finally {
-      setActionSaving(false)
-    }
-  }
+Nodes:
+A - North Gate
+B - Central Zone
+C - East Zone
+D - Transit Hub
 
-  const handleShareMap = async () => {
-    const mapData = `EventFlow Crowd Map\n\n${zones
-      .map((zone) => `${zone.name}: ${zone.current_crowd ?? "No data"} people (${formatPercent(zone.occupancy_pct)})`)
-      .join("\n")}`
-    try {
-      await navigator.clipboard.writeText(mapData)
-      window.alert("Crowd map copied successfully!")
-    } catch {
-      setApiError("Could not access the clipboard in this browser.")
-    }
-  }
+Current Status:
+North Gate: ${northGateCrowd}%
+East Zone: ${eastZoneCrowd}%
+Transit: ${transitCapacity}%
+`
+
+  await navigator.clipboard.writeText(mapData)
+  alert("Crowd map copied successfully!")
+}
 
   useEffect(() => {
   const timer = setInterval(() => {
@@ -288,25 +248,31 @@ function App() {
         </h1>
 
         <p className={themeClasses("text-slate-400 text-center mt-2")}>
-          Connect to the EventFlow API
+          AI Event Command Center
         </p>
 
         <div className={themeClasses("mt-8 space-y-4")}>
           <div>
-            <label className={themeClasses("text-sm text-slate-300")}>Backend development user ID</label>
+            <label className={themeClasses("text-sm text-slate-300")}>Email</label>
             <input
-              type="number"
-              min="1"
-              placeholder="Set VITE_P3_USER_ID or enter an ID"
-              value={backendUserId}
-              onChange={(e) => setBackendUserId(e.target.value)}
+              type="email"
+              placeholder="organizer@event.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className={`w-full mt-2 rounded-lg px-4 py-3 outline-none focus:border-blue-500 ${themeClasses("bg-slate-800 border border-slate-700")} ${isDark ? "text-white" : "text-slate-900"}`}
             />
           </div>
 
-          <p className={themeClasses("text-xs text-slate-500")}>
-            The backend currently uses the X-User-Id development header; it does not provide email/password login.
-          </p>
+          <div>
+            <label className={themeClasses("text-sm text-slate-300")}>Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`w-full mt-2 rounded-lg px-4 py-3 outline-none focus:border-blue-500 ${themeClasses("bg-slate-800 border border-slate-700")} ${isDark ? "text-white" : "text-slate-900"}`}
+            />
+          </div>
 
           {loginError && (
             <p className={themeClasses("text-red-400 text-sm")}>{loginError}</p>
@@ -314,26 +280,10 @@ function App() {
 
           <button
             onClick={handleLogin}
-            disabled={apiLoading}
             className={themeClasses("w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-3 font-semibold text-white")}
           >
-            {apiLoading ? "Connecting..." : "Connect"}
+            Login
           </button>
-
-          {hasNoEvents && (
-            <div className={themeClasses("space-y-3 border-t border-slate-800 pt-4")}>
-              <p className={themeClasses("text-sm text-slate-400")}>
-                No events are stored yet. Create the starter event and venue nodes to continue. No crowd data will be generated.
-              </p>
-              <button
-                onClick={handleCreateStarterEvent}
-                disabled={apiLoading}
-                className={themeClasses("w-full bg-green-600 hover:bg-green-500 rounded-lg py-3 font-semibold text-white")}
-              >
-                Create Starter Event
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -404,7 +354,7 @@ function App() {
           <div className={themeClasses("flex items-center gap-2 mt-3")}>
             <div className={themeClasses("w-2.5 h-2.5 rounded-full bg-green-400")} />
             <span className={themeClasses("text-sm text-slate-300")}>
-              {backendHealth?.status === "ok" ? "Backend connected" : "Backend status unavailable"}
+              All systems operational
             </span>
           </div>
         </div>
@@ -441,22 +391,9 @@ function App() {
     </p>
   </div>
 
-  {events.length > 1 && (
-    <select
-      value={eventId ?? ""}
-      onChange={(event) => setEventId(Number(event.target.value))}
-      aria-label="Select event"
-      className={themeClasses("rounded-lg border border-slate-700 bg-slate-800 px-3 py-2")}
-    >
-      {events.map((event) => <option key={event.event_id} value={event.event_id}>{event.name}</option>)}
-    </select>
-  )}
-
   <div className={themeClasses("px-4 py-2 rounded-lg border border-slate-700 bg-slate-900")}>
     <span className={themeClasses("text-sm text-slate-400")}>Status</span>
-    <span className={themeClasses(`ml-2 font-medium ${dashboard?.event.status === "ACTIVE" ? "text-green-400" : "text-yellow-400"}`)}>
-      {dashboard?.event.status ?? "CONNECTING"}
-    </span>
+    <span className={themeClasses("ml-2 text-green-400 font-medium")}>LIVE</span>
   </div>
 
   <button
@@ -494,17 +431,6 @@ function App() {
           
         </header>
 
-                {apiError && (
-                  <div className={themeClasses("mb-6 flex items-center justify-between gap-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300")} role="alert">
-                    <span>{apiError}</span>
-                    {eventId !== null && (
-                      <button onClick={() => void refreshBackendData(eventId)} className={themeClasses("font-semibold underline")}>
-                        Retry
-                      </button>
-                    )}
-                  </div>
-                )}
-
 
         {/* ==================== STATS ==================== */}
         <section className={themeClasses("grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6")}>
@@ -513,15 +439,17 @@ function App() {
 <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
   <div className={themeClasses("flex items-center justify-between")}>
     <span className={themeClasses("text-2xl")}>👥</span>
-    <span className={themeClasses("text-xs text-red-400")}>
-      {dashboard?.stats.crowd_level_pct == null ? "NO DATA" : dashboard.stats.crowd_level_pct >= alertThreshold ? "ABOVE THRESHOLD" : "WITHIN THRESHOLD"}
-    </span>
+    <span className={themeClasses("text-xs text-red-400")}>High</span>
   </div>
 
   <p className={themeClasses("text-slate-400 text-sm mt-5")}>Crowd Level</p>
 
   <p className={themeClasses("text-3xl font-bold mt-1")}>
-    {formatPercent(dashboard?.stats.crowd_level_pct)}
+    {selectedStrategy === "A"
+      ? "68%"
+      : selectedStrategy === "B"
+      ? "73%"
+      : "78%"}
   </p>
 </div>
 
@@ -535,25 +463,25 @@ function App() {
   <p className={themeClasses("text-slate-400 text-sm mt-5")}>Live Visitors</p>
 
   <p className={themeClasses("text-3xl font-bold mt-1")}>
-    {zones.some((zone) => zone.current_crowd !== null) ? dashboard?.stats.live_visitors.toLocaleString() : "No data"}
+    {liveVisitors.toLocaleString()}
   </p>
 
   <p className={themeClasses("text-green-400 text-xs mt-2")}>
-    {zones.some((zone) => zone.crowd_updated_at) ? "Backend live state" : "Awaiting crowd ingestion"}
+    Updating every 2 sec
   </p>
 </div>
 
-{/* Network Capacity */}
+{/* Transit Capacity */}
 <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
   <div className={themeClasses("flex items-center justify-between")}>
     <span className={themeClasses("text-2xl")}>🚌</span>
-    <span className={themeClasses("text-xs text-blue-400")}>{networkCapacity == null ? "NO DATA" : "STORED"}</span>
+    <span className={themeClasses("text-xs text-blue-400")}>Stable</span>
   </div>
 
-  <p className={themeClasses("text-slate-400 text-sm mt-5")}>Network Capacity</p>
+  <p className={themeClasses("text-slate-400 text-sm mt-5")}>Transit Capacity</p>
 
   <p className={themeClasses("text-3xl font-bold mt-1")}>
-    {formatPercent(networkCapacity)}
+    {transitCapacity}%
   </p>
 </div>
 
@@ -561,13 +489,13 @@ function App() {
 <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
   <div className={themeClasses("flex items-center justify-between")}>
     <span className={themeClasses("text-2xl")}>🛡️</span>
-    <span className={themeClasses("text-xs text-yellow-400")}>UNAVAILABLE</span>
+    <span className={themeClasses("text-xs text-yellow-400")}>Monitoring</span>
   </div>
 
   <p className={themeClasses("text-slate-400 text-sm mt-5")}>Risk Level</p>
 
   <p className={themeClasses("text-3xl font-bold mt-1")}>
-    {dashboard?.stats.risk_level ?? "Unavailable"}
+    {selectedStrategy === "A" ? "Low" : "Medium"}
   </p>
 </div>
 
@@ -594,14 +522,14 @@ function App() {
                     </p>
                     {selectedStrategy && (
                       <span className={themeClasses("inline-block mt-2 text-xs text-blue-300")}>
-                       Selected strategy set: #{selectedStrategy}
+                       Simulation active: Strategy {selectedStrategy}
                       </span>
                     )}
                   </div>
 
                   <div className={themeClasses("flex items-center gap-2")}>
   <span className={themeClasses("text-xs px-3 py-1 rounded-full bg-green-500/10 text-green-400")}>
-    {simulationResult ? "SIMULATION RESULT" : "LIVE DATA"}
+    {selectedStrategy ? "SIMULATION" : "LIVE DATA"}
   </span>
 
   <button
@@ -1047,37 +975,39 @@ function App() {
 </svg>
 
   <div className={themeClasses("mt-4 bg-slate-900 rounded-lg p-4")}>
-    <p className={themeClasses("text-xs text-slate-400 uppercase")}>Selected Node</p>
+    <p className={themeClasses("text-xs text-slate-400 uppercase")}>Selected Dropper</p>
 
     <h4 className={themeClasses("text-lg font-semibold mt-1")}>
       {selectedNode === "A" && "North Gate"}
       {selectedNode === "B" && "Central Zone"}
       {selectedNode === "C" && "East Zone"}
-      {selectedNode === "D" && (zoneByName("Transit")?.name ?? "Transit")}
+      {selectedNode === "D" && "Transit Hub"}
     </h4>
 
     <div className={themeClasses("grid grid-cols-3 gap-3 mt-3")}>
       <div>
         <p className={themeClasses("text-xs text-slate-500")}>Utilization</p>
         <p className={themeClasses("font-bold")}>
-          {formatPercent(zoneForNode(selectedNode)?.occupancy_pct)}
+          {selectedNode === "A" && `${northGateCrowd}%`}
+          {selectedNode === "B" && "78%"}
+          {selectedNode === "C" && `${eastZoneCrowd}%`}
+          {selectedNode === "D" && `${transitCapacity}%`}
         </p>
       </div>
 
       <div>
         <p className={themeClasses("text-xs text-slate-500")}>Status</p>
         <p className={themeClasses("font-bold")}>
-          {zoneForNode(selectedNode)?.above_threshold
-            ? "Above threshold"
-            : zoneForNode(selectedNode)?.current_crowd == null
-            ? "Unavailable"
-            : "Within threshold"}
+          {selectedNode === "A" && "Critical"}
+          {selectedNode === "B" && "Busy"}
+          {selectedNode === "C" && "Low"}
+          {selectedNode === "D" && "Stable"}
         </p>
       </div>
 
       <div>
         <p className={themeClasses("text-xs text-slate-500")}>Node</p>
-        <p className={themeClasses("font-bold")}>{zoneForNode(selectedNode)?.node_id ?? "—"}</p>
+        <p className={themeClasses("font-bold")}>{selectedNode}</p>
       </div>
     </div>
   </div>
@@ -1103,13 +1033,13 @@ function App() {
 
                   {alerts.map((alert) => (
   <div
-    key={`${alert.source}-${alert.ref_id}`}
+    key={alert.title}
     className={themeClasses("border border-slate-800 rounded-lg p-4 space-y-2")}
   >
     <div className={themeClasses("flex justify-between items-start")}>
       <div>
         <p className={themeClasses("text-xs text-blue-400 font-medium")}>
-          {alert.source.replaceAll("_", " ")}
+          {alert.type}
         </p>
 
         <h4 className={themeClasses("font-semibold mt-1")}>
@@ -1119,29 +1049,40 @@ function App() {
 
       <span
         className={`text-xs px-2 py-1 rounded ${
-          alert.level === "HIGH"
+          alert.severity === "HIGH"
             ? "bg-red-500/10 text-red-400"
-            : alert.level === "MEDIUM"
+            : alert.severity === "MEDIUM"
             ? "bg-yellow-500/10 text-yellow-400"
             : "bg-green-500/10 text-green-400"
         }`}
       >
-        {alert.level}
+        {alert.severity}
       </span>
     </div>
 
     <p className={themeClasses("text-sm text-slate-300")}>
-      📍 {alert.location ?? "Event"}
+      📍 {alert.location}
     </p>
 
     <p className={themeClasses("text-xs text-slate-500")}>
-      🕒 {new Date(alert.created_at).toLocaleString()}
+      🕒 {alert.time}
     </p>
+
+    <p className={themeClasses("text-sm text-slate-400")}>
+      {alert.description}
+    </p>
+
+    <div className={themeClasses("bg-slate-800 rounded-md p-3")}>
+      <p className={themeClasses("text-xs text-green-400 font-medium")}>
+        Recommended Action
+      </p>
+
+      <p className={themeClasses("text-sm mt-1")}>
+        {alert.action}
+      </p>
+    </div>
   </div>
 ))}
-                  {alerts.length === 0 && (
-                    <p className={themeClasses("text-sm text-slate-500")}>No alerts are currently reported by the backend.</p>
-                  )}
 
                 </div>
               </div>
@@ -1161,19 +1102,17 @@ function App() {
                   </p>
 
                   <h3 className={themeClasses("text-xl font-semibold mt-1")}>
-                    {executionStatus.toUpperCase() === "EXECUTING"
+                    {executionStatus === "Executing"
                       ? `Strategy ${selectedStrategy} is being executed`
-                      : executionStatus.toUpperCase() === "COMPLETED"
+                      : executionStatus === "Completed"
                       ? `Strategy ${selectedStrategy} execution completed`
-                      : executionStatus === "Ready"
-                      ? "No active strategy"
-                      : `Execution status: ${executionStatus}`}
+                      : "No active strategy"}
                   </h3>
 
                   <p className={themeClasses("text-sm text-slate-400 mt-2")}>
-                    {executionStatus.toUpperCase() === "EXECUTING"
+                    {executionStatus === "Executing"
                       ? "Operational changes are being monitored in real time."
-                      : "Execution state is supplied by the backend."}
+                      : "Simulate and approve a strategy to begin execution."}
                   </p>
 
                 </div>
@@ -1182,7 +1121,7 @@ function App() {
 
                   <div
                     className={`w-3 h-3 rounded-full ${
-                      executionStatus.toUpperCase() === "EXECUTING"
+                      executionStatus === "Executing"
                         ? "bg-blue-400 animate-pulse"
                         : isDark ? "bg-slate-600" : "bg-slate-300"
                     }`}
@@ -1196,6 +1135,32 @@ function App() {
 
               </div>
 
+
+              {(executionStatus === "Executing" ||
+                executionStatus === "Completed") && (
+                <div className={themeClasses("mt-5")}>
+
+                  <div className={themeClasses("flex justify-between text-sm mb-2")}>
+
+                    <span className={themeClasses("text-slate-400")}>
+                      Execution progress
+                    </span>
+
+                    <span>
+                      {executionProgress}%
+                    </span>
+
+                  </div>
+
+                  <div className={themeClasses("h-2 bg-slate-800 rounded-full overflow-hidden")}>
+                    <div 
+                     className={themeClasses("h-2 bg-blue-500 rounded-full transition-all duration-700")}
+                     style={{ width: `${executionProgress}%` }}
+                    />
+                  </div>
+
+                </div>
+              )}
 
             </div>
 
@@ -1224,7 +1189,7 @@ function App() {
 
             {activityLog.map((activity, index) => (
               <div
-                key={`${activity.source}-${activity.ref_id}-${index}`}
+                key={`${activity.time}-${index}`}
                 className={themeClasses("flex items-start gap-4")}
               >
 
@@ -1245,16 +1210,13 @@ function App() {
                   </p>
 
                   <p className={themeClasses("text-xs text-slate-500 mt-1")}>
-                    {new Date(activity.created_at).toLocaleString()}
+                    {activity.time}
                   </p>
 
                 </div>
 
               </div>
             ))}
-            {activityLog.length === 0 && (
-              <p className={themeClasses("text-sm text-slate-500")}>No timeline activity is stored for this event.</p>
-            )}
 
           </div>
 
@@ -1281,28 +1243,33 @@ function App() {
 
             <div className={themeClasses("grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4")}>
 
-             {zones.map((zone) => (
+             {[
+  ["North Gate", `${northGateCrowd}%`, northGateCrowd >= 85 ? "HIGH" : "NORMAL"],
+  ["Central Zone", "78%", "HIGH"],
+  ["East Zone", `${eastZoneCrowd}%`, "NORMAL"],
+  ["Transit", `${transitCapacity}%`, "STABLE"],
+].map(([zone, level, status]) => (
                 <div
-                  key={zone.node_id}
+                  key={zone}
                   className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}
                 >
 
                   <p className={themeClasses("text-slate-400 text-sm")}>
-                    {zone.name}
+                    {zone}
                   </p>
 
                   <p className={themeClasses("text-3xl font-bold mt-2")}>
-                    {formatPercent(zone.occupancy_pct)}
+                    {level}
                   </p>
 
                   <span
                     className={`inline-block mt-3 text-xs px-2 py-1 rounded ${
-                      zone.above_threshold
+                      status === "HIGH"
                         ? "bg-red-500/10 text-red-400"
                         : "bg-green-500/10 text-green-400"
                     }`}
                   >
-                    {zone.current_crowd == null ? "NO CROWD DATA" : zone.above_threshold ? "ABOVE THRESHOLD" : "WITHIN THRESHOLD"}
+                    {status}
                   </span>
 
                 </div>
@@ -1313,11 +1280,74 @@ function App() {
 
             <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-6")}>
 
-              <h3 className={themeClasses("text-lg font-semibold")}>Crowd Movement</h3>
+              <h3 className={themeClasses("text-lg font-semibold")}>
+                Crowd Movement
+              </h3>
 
               <p className={themeClasses("text-sm text-slate-400 mt-1")}>
-                Current edge-flow data is not available from the backend contract.
+                Current movement between zones
               </p>
+
+
+              <div className={themeClasses("mt-6 space-y-5")}>
+
+                <div>
+
+                  <div className={themeClasses("flex justify-between text-sm mb-2")}>
+                    <span>
+                      North Gate → Central Zone
+                    </span>
+
+                    <span className={themeClasses("text-red-400")}>
+                      High flow
+                    </span>
+                  </div>
+
+                  <div className={themeClasses("h-3 bg-slate-800 rounded-full")}>
+                    <div className={themeClasses("h-3 w-[85%] bg-red-500 rounded-full")} />
+                  </div>
+
+                </div>
+
+
+                <div>
+
+                  <div className={themeClasses("flex justify-between text-sm mb-2")}>
+                    <span>
+                      Central Zone → East Zone
+                    </span>
+
+                    <span className={themeClasses("text-yellow-400")}>
+                      Moderate
+                    </span>
+                  </div>
+
+                  <div className={themeClasses("h-3 bg-slate-800 rounded-full")}>
+                    <div className={themeClasses("h-3 w-[55%] bg-yellow-500 rounded-full")} />
+                  </div>
+
+                </div>
+
+
+                <div>
+
+                  <div className={themeClasses("flex justify-between text-sm mb-2")}>
+                    <span>
+                      East Zone → Transit
+                    </span>
+
+                    <span className={themeClasses("text-green-400")}>
+                      Normal
+                    </span>
+                  </div>
+
+                  <div className={themeClasses("h-3 bg-slate-800 rounded-full")}>
+                    <div className={themeClasses("h-3 w-[35%] bg-green-500 rounded-full")} />
+                  </div>
+
+                </div>
+
+              </div>
             </div>
 
           </section>
@@ -1336,22 +1366,37 @@ function App() {
         Next 60 Minutes Prediction
       </h2>
       <p className={themeClasses("text-slate-400 mt-2")}>
-        Stored prediction output supplied by the crowd engine.
+        Forecasted congestion generated from the EventFlow simulation engine.
       </p>
     </div>
 
     {/* Forecast Cards */}
     <div className={themeClasses("grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4")}>
-      {forecasts.map((zone) => (
-        <div key={zone.prediction_id} className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
-          <p className={themeClasses("text-slate-400 text-sm")}>{zone.node_name}</p>
-          <p className={themeClasses("text-3xl font-bold mt-2")}>{formatPercent(zone.predicted_occupancy_pct)}</p>
-          <p className={themeClasses("text-xs text-slate-500 mt-2")}>Horizon: {Math.round(zone.prediction_horizon / 60)} min</p>
-        </div>
-      ))}
-      {forecasts.length === 0 && (
-        <p className={themeClasses("text-sm text-slate-500")}>No prediction data has been received from the backend.</p>
-      )}
+
+      <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
+        <p className={themeClasses("text-slate-400 text-sm")}>North Gate</p>
+        <p className={themeClasses("text-3xl font-bold text-red-400 mt-2")}>89%</p>
+        <p className={themeClasses("text-xs text-red-300 mt-2")}>+12% expected</p>
+      </div>
+
+      <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
+        <p className={themeClasses("text-slate-400 text-sm")}>Central Zone</p>
+        <p className={themeClasses("text-3xl font-bold text-yellow-400 mt-2")}>74%</p>
+        <p className={themeClasses("text-xs text-yellow-300 mt-2")}>Moderate density</p>
+      </div>
+
+      <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
+        <p className={themeClasses("text-slate-400 text-sm")}>East Zone</p>
+        <p className={themeClasses("text-3xl font-bold text-green-400 mt-2")}>58%</p>
+        <p className={themeClasses("text-xs text-green-300 mt-2")}>Stable flow</p>
+      </div>
+
+      <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-5")}>
+        <p className={themeClasses("text-slate-400 text-sm")}>Transit</p>
+        <p className={themeClasses("text-3xl font-bold text-blue-400 mt-2")}>71%</p>
+        <p className={themeClasses("text-xs text-blue-300 mt-2")}>Normal operation</p>
+      </div>
+
     </div>
 
     {/* Forecast Timeline */}
@@ -1360,38 +1405,65 @@ function App() {
         Predicted Crowd Growth
       </h3>
 
-      {forecastChartCoordinates.length > 1 ? (
-        <svg viewBox="0 0 600 220" className={themeClasses("w-full h-auto")}>
-          <line x1="50" y1="20" x2="50" y2="180" stroke="#475569" strokeWidth="1" />
-          <line x1="50" y1="180" x2="560" y2="180" stroke="#475569" strokeWidth="1" />
-          <polyline
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="4"
-            points={forecastChartCoordinates.map((point) => `${point.x},${point.y}`).join(" ")}
-          />
-          {forecastChartCoordinates.map((point, index) => (
-            <circle key={index} cx={point.x} cy={point.y} r="4" fill="#ef4444" />
-          ))}
-        </svg>
-      ) : (
-        <p className={themeClasses("text-sm text-slate-500")}>No forecast series is available from the backend.</p>
-      )}
+      <svg viewBox="0 0 600 220" className={themeClasses("w-full h-auto")}>
+
+        <line x1="50" y1="20" x2="50" y2="180" stroke="#475569" strokeWidth="1"/>
+
+        <line x1="50" y1="180" x2="560" y2="180" stroke="#475569" strokeWidth="1"/>
+
+        <polyline
+          fill="none"
+          stroke="#ef4444"
+          strokeWidth="4"
+          points="50,140 140,120 230,90 320,60 410,45 500,35"
+        />
+
+        <g fill="#ef4444">
+          <circle cx="50" cy="140" r="4"/>
+          <circle cx="140" cy="120" r="4"/>
+          <circle cx="230" cy="90" r="4"/>
+          <circle cx="320" cy="60" r="4"/>
+          <circle cx="410" cy="45" r="4"/>
+          <circle cx="500" cy="35" r="4"/>
+        </g>
+
+        <g fill="#94a3b8" fontSize="11" textAnchor="middle">
+          <text x="50" y="198">Now</text>
+          <text x="140" y="198">10m</text>
+          <text x="230" y="198">20m</text>
+          <text x="320" y="198">30m</text>
+          <text x="410" y="198">45m</text>
+          <text x="500" y="198">60m</text>
+        </g>
+
+        <g fill="#64748b" fontSize="10" textAnchor="end">
+          <text x="42" y="180">40%</text>
+          <text x="42" y="140">55%</text>
+          <text x="42" y="100">70%</text>
+          <text x="42" y="60">85%</text>
+          <text x="42" y="25">100%</text>
+        </g>
+
+      </svg>
 
       <div className={themeClasses("mt-4 flex items-center gap-2 text-sm text-slate-400")}>
         <div className={themeClasses("w-4 h-1 bg-red-500 rounded")}/>
-        {forecastChartZone ? `${forecastChartZone.node_name} forecast` : "Forecast series"}
+        North Gate forecast
       </div>
     </div>
 
     {/* AI Recommendation */}
     <div className={themeClasses("bg-blue-500/10 border border-blue-500/20 rounded-xl p-5")}>
       <p className={themeClasses("text-blue-300 text-sm font-medium")}>
-        {recommendation?.source ?? "P2 RECOMMENDATION"}
+        AI RECOMMENDATION
       </p>
 
      <h3 className={themeClasses("text-xl font-semibold mt-2")}>
-        {recommendation?.headline ?? "No recommendation is available."}
+  {selectedStrategy === "A"
+    ? "Strategy A successfully reduces congestion"
+    : selectedStrategy === "B"
+    ? "Additional gate stabilizes entry flow"
+    : "Open an additional North Gate within 20 minutes"}
 </h3>
       <button
   onClick={() => setSandboxOpen(true)}
@@ -1401,7 +1473,8 @@ function App() {
 </button>
 
       <p className={themeClasses("text-slate-300 mt-3")}>
-        {recommendation?.detail ?? "The backend has not returned recommendation details."}
+        Forecast indicates congestion may exceed 85% between 30–60 minutes.
+        Early intervention is expected to reduce peak crowd density.
       </p>
     </div>
 
@@ -1427,35 +1500,64 @@ function App() {
 
 
             <div className={themeClasses("grid grid-cols-1 lg:grid-cols-2 gap-5")}>
-              {strategySets.map((strategySet) => (
-                <article key={strategySet.strategy_set_id} className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-6")}>
-                  <div className={themeClasses("flex justify-between gap-4")}>
-                    <h3 className={themeClasses("text-lg font-semibold")}>
-                      {strategySet.name ?? `Strategy Set #${strategySet.strategy_set_id}`}
-                    </h3>
-                    <span className={themeClasses("text-xs text-blue-400")}>{strategySet.status}</span>
-                  </div>
-                  <p className={themeClasses("text-slate-400 text-sm mt-3")}>
-                    {strategySet.description ?? strategySet.strategies.map((strategy) => strategy.action).join("; ")}
-                  </p>
-                  <p className={themeClasses("text-xs text-slate-500 mt-3")}>
-                    Risk: {strategySet.risk_level ?? "Not supplied"} · Attempts: {strategySet.attempt_count}
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSelectedStrategy(String(strategySet.strategy_set_id))
-                      setSimulationResult(null)
-                      setSandboxOpen(true)
-                    }}
-                    className={themeClasses("mt-5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium")}
-                  >
-                    Open in Sandbox
-                  </button>
-                </article>
-              ))}
-              {strategySets.length === 0 && (
-                <p className={themeClasses("text-sm text-slate-500")}>No strategy sets have been supplied for this event.</p>
-              )}
+
+              {/* Strategy A */}
+              <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-6")}>
+
+                <div className={themeClasses("flex justify-between")}>
+
+                  <h3 className={themeClasses("text-lg font-semibold")}>
+                    Redirect Crowd
+                  </h3>
+
+                  <span className={themeClasses("text-xs text-green-400")}>
+                    LOW RISK
+                  </span>
+
+                </div>
+
+                <p className={themeClasses("text-slate-400 text-sm mt-3")}>
+                  Redirect incoming crowd from North Gate toward East Zone.
+                </p>
+
+                <button
+                  onClick={() => setSandboxOpen(true)}
+                  className={themeClasses("mt-5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium")}
+                >
+                  Test Strategy
+                </button>
+
+              </div>
+
+
+              {/* Strategy B */}
+              <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-6")}>
+
+                <div className={themeClasses("flex justify-between")}>
+
+                  <h3 className={themeClasses("text-lg font-semibold")}>
+                    Open Additional Gate
+                  </h3>
+
+                  <span className={themeClasses("text-xs text-yellow-400")}>
+                    MEDIUM RISK
+                  </span>
+
+                </div>
+
+                <p className={themeClasses("text-slate-400 text-sm mt-3")}>
+                  Increase entry capacity by opening an additional access point.
+                </p>
+
+                <button
+                  onClick={() => setSandboxOpen(true)}
+                  className={themeClasses("mt-5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium")}
+                >
+                  Test Strategy
+                </button>
+
+              </div>
+
             </div>
 
           </section>
@@ -1474,11 +1576,6 @@ function App() {
       <p className={themeClasses("text-slate-400 mt-2")}>
         Configure event parameters and alert behavior.
       </p>
-      {settings?.updated_at && (
-        <p className={themeClasses("text-xs text-slate-500 mt-2")}>
-          Last saved {new Date(settings.updated_at).toLocaleString()}
-        </p>
-      )}
     </div>
 
     <div className={themeClasses("bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5")}>
@@ -1548,12 +1645,8 @@ function App() {
         </button>
       </div>
 
-      <button
-        onClick={() => void handleSaveSettings()}
-        disabled={settingsSaving}
-        className={themeClasses("w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 font-medium")}
-      >
-        {settingsSaving ? "Saving..." : "Save Settings"}
+      <button className={themeClasses("w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium")}>
+        Save Settings
       </button>
 
     </div>
@@ -1572,7 +1665,7 @@ function App() {
           Test a response before taking action
         </h3>
         <p className={themeClasses("text-sm text-slate-400 mt-2")}>
-          Review strategy sets supplied for this event and simulate them through the backend.
+          Compare AI-generated strategies against current event conditions.
         </p>
       </div>
 
@@ -1589,28 +1682,36 @@ function App() {
       <div className={themeClasses("bg-slate-800 rounded-lg p-4")}>
         <p className={themeClasses("text-xs text-slate-400")}>Crowd Level</p>
         <p className={themeClasses("text-2xl font-bold mt-2")}>
-          {formatPercent(dashboard?.stats.crowd_level_pct)}
+          {selectedStrategy === "A"
+            ? "68%"
+            : selectedStrategy === "B"
+            ? "73%"
+            : "78%"}
         </p>
       </div>
 
       <div className={themeClasses("bg-slate-800 rounded-lg p-4")}>
         <p className={themeClasses("text-xs text-slate-400")}>North Gate</p>
         <p className={themeClasses("text-2xl font-bold mt-2 text-red-400")}>
-          {formatPercent(northGateCrowd)}
+          {selectedStrategy === "A" ? "Reduced" : "High"}
         </p>
       </div>
 
       <div className={themeClasses("bg-slate-800 rounded-lg p-4")}>
-        <p className={themeClasses("text-xs text-slate-400")}>Network Capacity</p>
+        <p className={themeClasses("text-xs text-slate-400")}>Transit Capacity</p>
         <p className={themeClasses("text-2xl font-bold mt-2")}>
-          {formatPercent(networkCapacity)}
+          {selectedStrategy === "A"
+            ? "72%"
+            : selectedStrategy === "B"
+            ? "61%"
+            : "64%"}
         </p>
       </div>
 
       <div className={themeClasses("bg-slate-800 rounded-lg p-4")}>
-        <p className={themeClasses("text-xs text-slate-400")}>Strategy sets</p>
+        <p className={themeClasses("text-xs text-slate-400")}>Risk</p>
         <p className={themeClasses("text-2xl font-bold mt-2 text-yellow-400")}>
-          {strategySets.length}
+          {selectedStrategy === "A" ? "Low" : "Medium"}
         </p>
       </div>
 
@@ -1620,7 +1721,7 @@ function App() {
 
 
       {/* ==================== SANDBOX MODAL ==================== */}
-      {sandboxOpen && selectedStrategy?.startsWith("legacy:") && (
+      {sandboxOpen && (
         <div className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50")}>
 
           <div className={themeClasses("w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-7")}>
@@ -1699,11 +1800,11 @@ function App() {
                 <div>
 
                   <p className={themeClasses("text-sm text-slate-400")}>
-                    Network Capacity
+                    Transit Capacity
                   </p>
 
                   <p className={themeClasses("text-2xl font-bold mt-1")}>
-                    {networkCapacity}%
+                    {transitCapacity}%
                   </p>
                 </div>
 
@@ -1935,7 +2036,7 @@ function App() {
       <div className={themeClasses("bg-slate-900 rounded-xl p-4")}>
 
         <p className={themeClasses("text-sm text-slate-400")}>
-          Network Capacity
+          Transit Capacity
         </p>
 
         <div className={themeClasses("flex items-end gap-3 mt-3")}>
@@ -1946,7 +2047,7 @@ function App() {
             </p>
 
             <p className={themeClasses("text-xl font-bold")}>
-                {networkCapacity}%
+                {transitCapacity}%
             </p>
           </div>
 
@@ -2152,96 +2253,6 @@ function App() {
         </div>
       )}
 
-      {sandboxOpen && (
-        <div className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50")}>
-          <div className={themeClasses("w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-7")}>
-            <div className={themeClasses("flex items-center justify-between mb-6")}>
-              <div>
-                <p className={themeClasses("text-blue-400 text-sm font-medium")}>SANDBOX SIMULATION</p>
-                <h2 className={themeClasses("text-2xl font-bold mt-1")}>Select a backend strategy set</h2>
-                <p className={themeClasses("text-sm text-slate-400 mt-1")}>Current values are read from stored event state; simulation output is returned by P1 through P3.</p>
-              </div>
-              <button
-                onClick={() => setSandboxOpen(false)}
-                aria-label="Close sandbox"
-                className={themeClasses("text-slate-400 hover:text-white text-2xl")}
-              >×</button>
-            </div>
-
-            <div className={themeClasses("grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6")}>
-              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
-                <p className={themeClasses("text-sm text-slate-400")}>Crowd level</p>
-                <p className={themeClasses("text-2xl font-bold mt-2")}>{formatPercent(dashboard?.stats.crowd_level_pct)}</p>
-              </div>
-              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
-                <p className={themeClasses("text-sm text-slate-400")}>Live visitors</p>
-                <p className={themeClasses("text-2xl font-bold mt-2")}>{dashboard?.stats.live_visitors.toLocaleString() ?? "No data"}</p>
-              </div>
-              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
-                <p className={themeClasses("text-sm text-slate-400")}>Network capacity</p>
-                <p className={themeClasses("text-2xl font-bold mt-2")}>{formatPercent(networkCapacity)}</p>
-              </div>
-            </div>
-
-            <div className={themeClasses("grid grid-cols-1 lg:grid-cols-2 gap-4")}>
-              {strategySets.map((strategySet) => (
-                <button
-                  key={strategySet.strategy_set_id}
-                  onClick={() => {
-                    setSelectedStrategy(String(strategySet.strategy_set_id))
-                    setSimulationResult(null)
-                  }}
-                  className={`text-left rounded-xl border p-5 transition-colors duration-300 ${selectedStrategy === String(strategySet.strategy_set_id) ? "border-blue-500 bg-blue-500/10" : themeClasses("border-slate-700 bg-slate-800 hover:border-slate-500")}`}
-                >
-                  <div className={themeClasses("flex items-center justify-between gap-3")}>
-                    <h3 className={themeClasses("text-lg font-semibold")}>{strategySet.name ?? `Strategy Set #${strategySet.strategy_set_id}`}</h3>
-                    <span className={themeClasses("text-xs text-blue-400")}>{strategySet.status}</span>
-                  </div>
-                  <p className={themeClasses("text-sm text-slate-300 mt-3")}>
-                    {strategySet.description ?? strategySet.strategies.map((strategy) => strategy.action).join("; ")}
-                  </p>
-                  <p className={themeClasses("text-xs text-slate-500 mt-3")}>
-                    Risk: {strategySet.risk_level ?? "Not supplied"} · Attempts: {strategySet.attempt_count}
-                  </p>
-                </button>
-              ))}
-              {strategySets.length === 0 && (
-                <p className={themeClasses("text-sm text-slate-500")}>No strategy sets have been supplied for this event.</p>
-              )}
-            </div>
-
-            {simulationResult && (
-              <div className={themeClasses("mt-6 bg-slate-800 rounded-xl p-5")}>
-                <p className={themeClasses("text-xs text-blue-400 font-medium")}>BACKEND SIMULATION · {simulationResult.status}</p>
-                <p className={themeClasses("mt-2")}>{simulationResult.result_summary}</p>
-                {simulationResult.conflicts.length > 0 && (
-                  <p className={themeClasses("text-sm text-yellow-400 mt-3")}>Conflicts: {simulationResult.conflicts.length}</p>
-                )}
-                {typeof simulationResult.predicted_metrics?.source === "string" && (
-                  <p className={themeClasses("text-xs text-slate-500 mt-2")}>Metrics source: {String(simulationResult.predicted_metrics.source)}</p>
-                )}
-              </div>
-            )}
-
-            <div className={themeClasses("flex items-center justify-between gap-4 mt-7 pt-5 border-t border-slate-800")}>
-              <p className={themeClasses("text-sm text-slate-400")}>
-                {selectedStrategySet ? `${selectedStrategySet.name ?? `Strategy Set #${selectedStrategySet.strategy_set_id}`} selected` : "Select a strategy set to continue"}
-              </p>
-              <div className={themeClasses("flex gap-3")}>
-                <button onClick={() => setSandboxOpen(false)} className={themeClasses("px-5 py-2.5 rounded-lg border border-slate-700 hover:bg-slate-800")}>Cancel</button>
-                <button
-                  disabled={!selectedStrategySet || actionSaving}
-                  onClick={() => void handleReviewStrategy()}
-                  className={themeClasses("px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed font-medium")}
-                >
-                  {actionSaving ? "Simulating..." : "Simulate and Review"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
 
       {/* ==================== STRATEGY REVIEW MODAL ==================== */}
       {reviewOpen && selectedStrategy && (
@@ -2254,24 +2265,61 @@ function App() {
             </p>
 
             <h2 className={themeClasses("text-2xl font-bold mt-1")}>
-              {selectedStrategySet?.name ?? `Strategy Set #${selectedStrategy}`}
+              Strategy {selectedStrategy}
             </h2>
 
             <p className={themeClasses("text-slate-400 mt-2")}>
-              Review the simulation result returned by the backend before approving.
+              Review the predicted impact before approving this action.
             </p>
 
 
-            <div className={themeClasses("mt-7 bg-slate-800 rounded-xl p-5")}>
-              <p className={themeClasses("text-xs text-blue-400 font-medium")}>
-                {simulationResult?.status ?? "NO RESULT"}
-              </p>
-              <p className={themeClasses("mt-2")}>
-                {simulationResult?.result_summary ?? "No simulation result has been returned."}
-              </p>
-              <p className={themeClasses("text-sm text-slate-400 mt-3")}>
-                {simulationResult?.conflicts.length ?? 0} reported conflicts
-              </p>
+            {/* Predicted Results */}
+            <div className={themeClasses("grid grid-cols-1 sm:grid-cols-3 gap-4 mt-7")}>
+
+              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
+
+                <p className={themeClasses("text-sm text-slate-400")}>
+                  Predicted Crowd
+                </p>
+
+                <p className={themeClasses("text-2xl font-bold mt-2")}>
+                  {selectedStrategy === "A" ? "68%" : "73%"}
+                </p>
+
+              </div>
+
+
+              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
+
+                <p className={themeClasses("text-sm text-slate-400")}>
+                  Transit Capacity
+                </p>
+
+                <p className={themeClasses("text-2xl font-bold mt-2")}>
+                  {selectedStrategy === "A" ? "72%" : "61%"}
+                </p>
+
+              </div>
+
+
+              <div className={themeClasses("bg-slate-800 rounded-xl p-4")}>
+
+                <p className={themeClasses("text-sm text-slate-400")}>
+                  Risk
+                </p>
+
+                <p
+                  className={`text-2xl font-bold mt-2 ${
+                    selectedStrategy === "A"
+                      ? "text-green-400"
+                      : "text-yellow-400"
+                  }`}
+                >
+                  {selectedStrategy === "A" ? "Low" : "Medium"}
+                </p>
+
+              </div>
+
             </div>
 
 
@@ -2279,7 +2327,8 @@ function App() {
             <div className={themeClasses("mt-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4")}>
 
               <p className={themeClasses("text-sm text-blue-300")}>
-                Approval records the coordinator decision and triggers the backend execution workflow.
+                This is a simulated prediction. The organizer can approve
+                the strategy after reviewing its expected impact.
               </p>
 
             </div>
@@ -2289,21 +2338,33 @@ function App() {
             <div className={themeClasses("flex justify-end gap-3 mt-7")}>
 
               <button
-                onClick={() => {
-                  setReviewOpen(false)
-                  setSimulationResult(null)
-                }}
+                onClick={() => setReviewOpen(false)}
                 className={themeClasses("px-5 py-2.5 rounded-lg border border-slate-700 hover:bg-slate-800")}
               >
                 Back
               </button>
 
               <button
-                onClick={() => void handleApproveStrategy()}
-                disabled={actionSaving || !simulationResult}
-                className={themeClasses("px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 font-medium")}
+                onClick={() => {
+                 setStrategyApproved(true)
+                 setExecutionStatus("Executing")
+                 setExecutionProgress(10)
+
+                 setActivityLog((current) => [
+                   {
+                     time: "Just now",
+                     message: `Strategy ${selectedStrategy} approved and execution started`,
+                     type: "success",
+                    },
+                    ...current,
+                 ])
+
+                 setReviewOpen(false)
+                 setSandboxOpen(false)
+                }}
+                className={themeClasses("px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-medium")}
               >
-                {actionSaving ? "Approving..." : "Approve Strategy"}
+                Approve Strategy
               </button>
 
             </div>
@@ -2323,7 +2384,7 @@ function App() {
           </p>
 
           <p className={themeClasses("text-sm text-slate-300 mt-1")}>
-            {selectedStrategySet?.name ?? `Strategy Set #${selectedStrategy}`} has been approved.
+            Strategy {selectedStrategy} is now being executed.
           </p>
 
           <button
