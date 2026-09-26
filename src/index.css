@@ -10,3 +10,28 @@ body,
 body {
   min-width: 320px;
 }
+.map {
+  background: #eef5fb;
+  border-radius: 18px;
+  border: 1px solid #dbe6f2;
+}
+
+.stitch-marker {
+  transition: 0.25s;
+}
+
+.stitch-marker:hover {
+  transform: scale(1.12);
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.18));
+}
+
+.stitch-label {
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.map-road-label {
+  font-size: 11px;
+  fill: #64748b;
+  font-weight: 600;
+}
