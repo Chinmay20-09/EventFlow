@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # disables token login for the seeded users (password_hash NULL). Dev
     # X-User-Id identity resolution is unchanged.
     secret_key: str = ""
+    # Token login needs a non-empty signing key. In dev/test the `.env` file
+    # (git-ignored) supplies it; deployed instances must set SECRET_KEY in the
+    # environment. An empty value is only tolerated in `development`.
+    secret_key: str = ""
     access_token_expire_minutes: int = 60
 
 

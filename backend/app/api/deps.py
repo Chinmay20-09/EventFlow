@@ -25,13 +25,7 @@ CurrentOperator = Annotated[User, Depends(get_current_operator)]
 from app.api.deps_event import get_organizer_events, get_current_event
 from app.models.event import Event
 
-# Re-export get_current_user so any module importing from deps can resolve
-# the current user directly (keeps the existing `get_current_user` name).
-# `get_current_user` is defined in app.core.security and re-exported below;
 
-# Re-export get_current_user so any module importing from deps can resolve
-# the current user directly (keeps the existing `get_current_user` name).
-from app.api.deps_event import get_current_user
 
 # Events the authenticated user may manage (server-side only; never trusted by
 # the client — see get_current_event for the real per-request authorization).

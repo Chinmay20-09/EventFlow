@@ -30,13 +30,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.core.security import get_current_user as _resolve_current_user
+from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.event import Event, EventOrganizer
 from app.models.user import User, ROLE_ORGANIZER, ROLE_COORDINATOR
 
 __all__ = [
-    "get_current_user",
     "get_organizer_events",
     "get_current_event",
     "AuthorizeEvent",
@@ -54,7 +53,7 @@ def select_event_organizers_for_user(user_id: int) -> select:
 
 
 def get_organizer_events(
-    user: User = Depends(_resolve_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Event]:
     """Return the events this authenticated user is authorized to manage.
@@ -80,7 +79,7 @@ def get_organizer_events(
 
 def require_event(
     event_id: int = Query(..., alias="event_id"),
-    user: User = Depends(_resolve_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Event:
     """Validate that ``event_id`` is both a real event and one this user owns.
