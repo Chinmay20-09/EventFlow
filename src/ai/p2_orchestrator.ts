@@ -511,25 +511,28 @@ export class P2Orchestrator {
         };
       }
 
-      addToolResult(
-        context,
-        {
-          tool_name:
-            "runBaselineSimulation",
-
-          success: true,
-
-          summary:
-            "P1 baseline simulation completed.",
-
-          data: result.data,
-        },
-      );
-
       context.p1_state = {
         ...context.p1_state,
         simulation: result.data,
       };
+
+      // `addToolResult` returns an updated context copy — it must be captured,
+      // otherwise the tool result is silently dropped from the AI context.
+      const contextWithToolResult =
+        addToolResult(
+          context,
+          {
+            tool_name:
+              "runBaselineSimulation",
+
+            success: true,
+
+            summary:
+              "P1 baseline simulation completed.",
+
+            data: result.data,
+          },
+        );
 
       const simulation =
         context.p1_state.simulation;
@@ -538,7 +541,7 @@ export class P2Orchestrator {
         return {
           success: false,
           intent,
-          context,
+          context: contextWithToolResult,
           message:
             "P1 completed but did not return a simulation result.",
         };
@@ -552,7 +555,7 @@ export class P2Orchestrator {
       return {
         success: true,
         intent,
-        context,
+        context: contextWithToolResult,
         response,
         message:
           formatOrganizerResponse(

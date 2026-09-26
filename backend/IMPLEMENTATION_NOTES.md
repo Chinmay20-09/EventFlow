@@ -367,3 +367,76 @@ meets HTTP.
   requires `event_id` / `strategy_set_id` to be supplied explicitly (env /
   CLI flag); it never derives `strategy_set_id` from P1's opaque
   `strategy_id`/`scenario_id` strings.
+
+## 9. Two crowd-ingestion contracts — intentional, not duplication (audit D1)
+
+P3 exposes two distinct, documented crowd ingestion endpoints. They are NOT
+duplicate implementations of one contract — both are kept:
+
+| | `POST /api/internal/crowd` (`routes/crowd.py`) | `POST /api/internal/crowd-state` (`routes/p1.py`) |
+|---|---|---|
+| Contract source | EV-037 §6 (documented API spec) | P1 `serializeMetric` (`src/engine/serialization.ts`) |
+| Shape | one node per request, integer `node_id`, optional `quality` | batch snapshot, P1 string ids resolved via `nodes.external_id`, full 17-key metric stored in `crowd_state.p1_metric` |
+| Caller | manual/ops tooling and the original EV-037 flow | the P1 transport (`src/transport/p3Client.ts`) |
+| Tests | `tests/test_internal_crowd.py` | `tests/test_p1_ingestion.py` |
+
+Both write the same single `crowd_state` row per node (last-write-wins upsert,
+EV-005 §7) and never double-count. Neither performs any calculation.
+
+## 10. P2 → P3 contract (verified live 2026-09-26)
+
+The existing, verified connection is **push over HTTP**: P2 (or a caller acting
+for P2) submits its strategy output to P3's public API. P2 never touches
+PostgreSQL and never imports P3 code. There is exactly ONE endpoint and ONE
+schema for this — no duplicate was created.
+
+**P2 sends**
+
+- Endpoint: `POST /api/events/{event_id}/strategy-sets`
+- Method: `POST`, `Content-Type: application/json`
+- Request body (`backend/app/schemas/strategy.py::StrategySetCreate`,
+  `extra="forbid"`):
+
+```json
+{
+  "strategies": [
+    {"source_node_id": 5, "destination_node_id": 6, "action": "REDIRECT_FLOW"}
+  ],
+  "name": "Gate Flow Redistribution",
+  "description": "Redirect incoming crowd from North Gate toward East Zone.",
+  "risk_level": "LOW"
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `strategies` | yes (min 1) | `source_node_id`/`destination_node_id` must be existing nodes of `{event_id}`; `action` 1–60 chars |
+| `name` | no (≤200 chars) | P2-supplied metadata, stored verbatim — P3 never generates it |
+| `description` | no (≤2000 chars) | stored verbatim |
+| `risk_level` | no (≤30 chars) | stored verbatim |
+
+**P3 returns**
+
+- `201` → `{"success": true, "data": {StrategySetOut}}` — includes
+  `strategy_set_id`, `status: "PROPOSED"`, `attempt_count`, and the stored
+  P2 metadata. Errors (documented envelope `backend/app/core/errors.py`):
+  `404 NOT_FOUND` (unknown event), `422 VALIDATION_ERROR` (unknown/foreign
+  node, malformed body), `500 DATABASE_ERROR`.
+
+**Downstream workflow (P3-owned state machine):**
+`POST /api/strategy-sets/{id}/simulate` → `GET /api/strategy-sets/{id}/simulation`
+→ `POST .../approve` (Coordinator via `X-User-Id`) → execution. P1 results can
+replace the mock at `POST /api/internal/simulations` (see §5).
+
+**Environment / startup / test**
+
+- P3: `DATABASE_URL` (PostgreSQL), optional `P3_API_KEY` for `/api/internal/*`;
+  run `uvicorn app.main:app` from `backend/` (port 8000, see `.env.example`).
+- CORS allows the P4 dev origin `http://localhost:5173`; the same API accepts
+  direct calls from P2 tooling.
+- Startup order: PostgreSQL → P3 backend → P1/P2 runners.
+- Live check: `curl -X POST .../api/events/{id}/strategy-sets` then
+  `GET /api/strategy-sets/{id}` must round-trip the metadata; rows verified in
+  PostgreSQL (`strategy_sets`, `strategies`) — see the test log in this branch.
+- Tests: `backend/tests/test_strategy_metadata.py` (verbatim storage),
+  `backend/tests/test_strategy_workflow.py` (state machine).

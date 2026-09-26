@@ -33,3 +33,8 @@ __pycache__/
 # P1→P3 transport local state (never commit queue contents or secrets)
 .p3-queue.jsonl
 .env
+
+# Flutter build artifacts (legacy P5 prototype removed 2026-09 — do not recommit)
+.dart_tool/
+build/
+pubspec.lock
