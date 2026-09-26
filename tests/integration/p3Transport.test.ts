@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { buildCrowdStateRequest, buildSimulationRequest, P3Client } from "../src/transport/p3Client"
-import type { P3ClientOptions } from "../src/transport/p3Client"
-import { MemoryPayloadQueue } from "../src/transport/p3Queue"
-import type { CapacityMetric, SimulationResult } from "../src/engine/types"
+import { buildCrowdStateRequest, buildSimulationRequest, P3Client } from "../../integration/transport/p3Client"
+import type { P3ClientOptions } from "../../integration/transport/p3Client"
+import { MemoryPayloadQueue } from "../../integration/transport/p3Queue"
+import type { CapacityMetric, SimulationResult } from "../../engine/src/types"
 
 /** A capacity metric in P1's internal camelCase shape (as `capacityMetric` returns it). */
 const metric: CapacityMetric = {
@@ -89,7 +89,7 @@ const minimalSimResult: SimulationResult = {
 
 /** A REAL P1 result (the serializer requires the complete shape). */
 async function buildRealSimResult(): Promise<SimulationResult> {
-  const { runSandbox } = await import("../src/engine/index")
+  const { runSandbox } = await import("../../engine/src/index")
   const graphInput = {
     nodes: [
       { id: "A", label: "Entry", type: "ENTRANCE" as const, capacity: 100, status: "OPEN" as const },
@@ -354,7 +354,7 @@ describe("crowd-state throttle (latest-wins batching)", () => {
 
 describe("P1 engine behavior is unchanged by the transport", () => {
   it("serializeSimulationResult output is untouched by transport construction", async () => {
-    const { runSandbox, serializeSimulationResult } = await import("../src/engine/index")
+    const { runSandbox, serializeSimulationResult } = await import("../../engine/src/index")
     const graphInput = {
       nodes: [
         { id: "A", label: "Entry", type: "ENTRANCE" as const, capacity: 100, status: "OPEN" as const },
@@ -374,13 +374,13 @@ describe("P1 engine behavior is unchanged by the transport", () => {
 
 describe("auth configuration hygiene", () => {
   it("never hard-codes a secret in the config module", async () => {
-    const source = await import("../src/transport/p3Config.ts?raw")
+    const source = await import("../../integration/transport/p3Config.ts?raw")
     expect(source.default).not.toMatch(/P3_API_KEY\s*=\s*["']/)
     expect(source.default).not.toMatch(/Bearer\s+[A-Za-z0-9_-]{8,}/)
   })
 
   it("configFromEnv requires an explicit P3_BASE_URL and never invents one", async () => {
-    const { configFromEnv } = await import("../src/transport/p3Config")
+    const { configFromEnv } = await import("../../integration/transport/p3Config")
     expect(() => configFromEnv({})).toThrow(/P3_BASE_URL/)
     const config = configFromEnv({ P3_BASE_URL: "http://p3.test:8000/", P3_API_KEY: "k" })
     expect(config.baseUrl).toBe("http://p3.test:8000")

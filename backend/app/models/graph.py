@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 
 class Node(Base):
@@ -17,7 +17,7 @@ class Node(Base):
     """
 
     __tablename__ = "nodes"
-    # P1 string node IDs are unique within an event only (src/engine/types.ts:
+    # P1 string node IDs are unique within an event only (engine/src/types.ts:
     # VenueGraphInput has no global ID scope).
     __table_args__ = (UniqueConstraint("event_id", "external_id", name="uq_nodes_event_external"),)
 

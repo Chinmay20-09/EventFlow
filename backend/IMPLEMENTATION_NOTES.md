@@ -105,7 +105,7 @@ and `src/App.tsx` / `vite.config.ts` / `package.json` were left untouched.
   simulation-failure code). No automatic retry (EV-024 §12).
 - **Disruption filters** use the documented query names `?status=` and
   `?type=` (EV-016 §7).
-- **File layout**: `app/utils.py`, `app/schemas/common.py`, and per-domain
+- **File layout**: `app/core/utils.py`, `app/schemas/common.py`, and per-domain
   model/schema/route modules were added inside the Phase-2 directory layout
   (the tree listed only `__init__.py` placeholders; Phases 3–4 require the
   additional modules). One concern per file, beginner-readable.
@@ -252,7 +252,7 @@ Only these stored rows appear — the timeline never invents entries.
 ## 5. P1 → P3 Integration Boundary (p3-p1-integration branch)
 
 The P1 Crowd Engine was brought into this branch **as-is** (TypeScript library,
-no HTTP layer): `src/engine/*`, `tests/engine.test.ts`, `scripts/test_Crowd.ts`
+no HTTP layer): `engine/src/*`, `engine/tests/engine.test.ts`, `scripts/test_Crowd.ts`
 (staged from the `Crowd-Engine` branch). No frontend, documentation or
 unrelated package changes were merged. P1 is exercised with `npm test`
 (vitest) and `npm run test:crowd -- --scenario|--compare|--determinism`
@@ -260,10 +260,10 @@ unrelated package changes were merged. P1 is exercised with `npm test`
 
 Because P1 has no server of its own, the integration boundary is **push
 ingestion over HTTP into the existing FastAPI app** — P1's own explicit
-P3-facing serializers in `src/engine/serialization.ts` (`serializeMetric`,
+P3-facing serializers in `engine/src/serialization.ts` (`serializeMetric`,
 `serializeSimulationResult`, snake_case) define the wire contract, and
 `backend/app/schemas/p1.py` validates exactly that shape (closed unions from
-`src/engine/types.ts`, `extra="forbid"`). No P1 calculation is duplicated in
+`engine/src/types.ts`, `extra="forbid"`). No P1 calculation is duplicated in
 Python — every stored value is a verbatim copy of a P1 value.
 
 Endpoints (registered in `app/main.py`, implemented in `app/api/routes/p1.py`):
@@ -341,7 +341,7 @@ all-questions document with no confirmed answers):
 ## 8. Runtime P1 → P3 transport (p3-p1-integration)
 
 The missing runtime connection is now implemented on the P1 side —
-`src/transport/` (see its README for the full mapping table). P1 remains a
+`integration/transport/` (see its README for the full mapping table). P1 remains a
 pure calculation library: the transport is the only place where the engine
 meets HTTP.
 
@@ -355,7 +355,7 @@ meets HTTP.
   `Authorization: Bearer <P3_API_KEY>` (`app/core/security.py::
   verify_p1_api_key`); empty (default) keeps the previous unauthenticated
   behavior. The P1 transport reads the same variable name (`P3_API_KEY`,
-  `src/transport/p3Config.ts`). No secret is committed.
+  `integration/transport/p3Config.ts`). No secret is committed.
 - **Delivery semantics:** bounded exponential-backoff retries (network/5xx
   only — 4xx is never retried), then the payload is appended to a local
   JSONL queue on the P1 side (`.p3-queue.jsonl`, git-ignored). A P3 outage
@@ -375,9 +375,9 @@ duplicate implementations of one contract — both are kept:
 
 | | `POST /api/internal/crowd` (`routes/crowd.py`) | `POST /api/internal/crowd-state` (`routes/p1.py`) |
 |---|---|---|
-| Contract source | EV-037 §6 (documented API spec) | P1 `serializeMetric` (`src/engine/serialization.ts`) |
+| Contract source | EV-037 §6 (documented API spec) | P1 `serializeMetric` (`engine/src/serialization.ts`) |
 | Shape | one node per request, integer `node_id`, optional `quality` | batch snapshot, P1 string ids resolved via `nodes.external_id`, full 17-key metric stored in `crowd_state.p1_metric` |
-| Caller | manual/ops tooling and the original EV-037 flow | the P1 transport (`src/transport/p3Client.ts`) |
+| Caller | manual/ops tooling and the original EV-037 flow | the P1 transport (`integration/transport/p3Client.ts`) |
 | Tests | `tests/test_internal_crowd.py` | `tests/test_p1_ingestion.py` |
 
 Both write the same single `crowd_state` row per node (last-write-wins upsert,

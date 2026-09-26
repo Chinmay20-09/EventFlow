@@ -37,7 +37,7 @@ A feedback loop from Simulation back into Optimization is intentional: candidate
 ## Repository layout
 
 ```
-Docs/                     Domain specifications (the architecture)
+docs/                     Domain specifications (the architecture)
   EV-006Graph_model.md     EV-006  Graph Model
   EV-007_Crowd_Model.md    EV-007  Crowd Model
   Disruption_model.md      EV-008  Disruption Model
@@ -85,16 +85,16 @@ The sandbox follows the intended production flow: pick a strategy → simulate i
 
 ## Documentation
 
-The `Docs/` folder holds the architecture. These six specifications are written and internally consistent; they are the source of truth for behaviour, field names and units.
+The `docs/` folder holds the architecture. These six specifications are written and internally consistent; they are the source of truth for behaviour, field names and units.
 
 | Document | What it defines |
 | --- | --- |
-| [`EV-006Graph_model.md`](Docs/EV-006Graph_model.md) | Nodes, directed edges, capacity, traversal and operational state |
-| [`EV-007_Crowd_Model.md`](Docs/EV-007_Crowd_Model.md) | Crowd groups, movement, accumulation, utilization, density and overload |
-| [`Disruption_model.md`](Docs/Disruption_model.md) | Disruption types, severity, lifecycle and declared operational effects |
-| [`Prediction.md`](Docs/Prediction.md) | Forecast targets, horizon, confidence, staleness and failure handling |
-| [`EV-010_Optimization.md`](Docs/EV-010_Optimization.md) | Decision variables, constraints, objectives, ranking and approval handoff |
-| [`EV-011_Simulation.md`](Docs/EV-011_Simulation.md) | Sandbox scenarios, isolated state, metrics and strategy comparison |
+| [`EV-006Graph_model.md`](docs/engine/EV-006Graph_model.md) | Nodes, directed edges, capacity, traversal and operational state |
+| [`EV-007_Crowd_Model.md`](docs/engine/EV-007_Crowd_Model.md) | Crowd groups, movement, accumulation, utilization, density and overload |
+| [`EV-008_Disruption_model.md`](docs/engine/EV-008_Disruption_model.md) | Disruption types, severity, lifecycle and declared operational effects |
+| [`EV-009_Prediction.md`](docs/engine/EV-009_Prediction.md) | Forecast targets, horizon, confidence, staleness and failure handling |
+| [`EV-010_Optimization.md`](docs/engine/EV-010_Optimization.md) | Decision variables, constraints, objectives, ranking and approval handoff |
+| [`EV-011_Simulation.md`](docs/engine/EV-011_Simulation.md) | Sandbox scenarios, isolated state, metrics and strategy comparison |
 
 [`team.docs`](team.docs) tracks the full document set (EV-001 … EV-045) with each document's purpose, summary, priority and status.
 

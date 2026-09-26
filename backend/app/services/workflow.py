@@ -16,7 +16,7 @@ from app.db.session import commit_or_fail
 from app.models.user import ROLE_COORDINATOR, User
 from app.models.workflow import Approval, Execution, SimulationResult, StrategySet
 from app.services.adapters import get_p1_engine, get_p5_ops
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 logger = logging.getLogger("eventflow.p3")
 
@@ -143,7 +143,7 @@ def record_external_simulation(
     p1_status = p1_payload["status"]
 
     # Idempotency: the P1 result id is deterministic for identical input
-    # (src/engine/sandbox.ts), so it is the duplicate-detection key.
+    # (engine/src/sandbox.ts), so it is the duplicate-detection key.
     if strategy_set.simulation_result_id is not None:
         existing = db.get(SimulationResult, strategy_set.simulation_result_id)
         if (

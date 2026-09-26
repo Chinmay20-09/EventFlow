@@ -14,7 +14,7 @@ from app.models.crowd import CrowdState
 from app.schemas.crowd import CrowdIngestIn, CrowdOut
 from app.api.routes.events import get_event_or_404
 from app.api.routes.nodes import get_node_or_404
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 router = APIRouter(prefix="/api", tags=["crowd"])
 

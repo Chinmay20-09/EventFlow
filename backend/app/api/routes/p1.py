@@ -1,7 +1,7 @@
 """P1 → P3 ingestion endpoints (crowd engine integration).
 
 P1 is a pure TypeScript library (no HTTP layer) whose explicit P3-facing
-serializers in `src/engine/serialization.ts` define the snake_case wire
+serializers in `engine/src/serialization.ts` define the snake_case wire
 format. These routes are the push boundary that receives those payloads:
 
   POST /api/internal/crowd-state    current crowd snapshot (serializeMetric)
@@ -30,7 +30,7 @@ from app.schemas.crowd import CrowdOut
 from app.schemas.p1 import P1CapacityMetric, P1CrowdStateIn, P1SimulationIn
 from app.schemas.strategy import SimulationStartOut
 from app.services import workflow
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 router = APIRouter(prefix="/api", tags=["p1-integration"], dependencies=[Depends(verify_p1_api_key)])
 

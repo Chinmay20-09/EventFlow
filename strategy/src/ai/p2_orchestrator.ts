@@ -47,11 +47,11 @@ import {
 
 import type {
   P1SimulationContext,
-} from "../tools/p1_simulation_tool";
+} from "../../../integration/tools/p1_simulation_tool";
 
 import {
   runBaselineSimulation,
-} from "../tools/p1_simulation_tool";
+} from "../../../integration/tools/p1_simulation_tool";
 
 import {
   explainSimulationResult,

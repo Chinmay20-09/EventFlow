@@ -1,14 +1,14 @@
 import { configFromEnv } from "./p3Config"
 import type { P3TransportConfig } from "./p3Config"
-import { serializeMetric, serializeSimulationResult } from "../engine/serialization"
-import type { CapacityMetric, SimulationResult } from "../engine/types"
+import { serializeMetric, serializeSimulationResult } from "../../engine/src/serialization"
+import type { CapacityMetric, SimulationResult } from "../../engine/src/types"
 import { createQueue, isValidEndpoint, newEntryId } from "./p3Queue"
 import type { QueuedPayload } from "./p3Queue"
 
 /**
  * P1 → P3 HTTP transport (the missing runtime connection).
  *
- * - Uses P1's own serializers (`src/engine/serialization.ts`) — no second
+ * - Uses P1's own serializers (`engine/src/serialization.ts`) — no second
  *   wire format, no recalculated crowd intelligence.
  * - POSTs to the two existing P3 ingestion endpoints
  *   (`POST /api/internal/crowd-state`, `POST /api/internal/simulations`),

@@ -14,7 +14,7 @@
  */
 
 import type { OrganizerIntent, IntentEntities } from "./intent";
-import type { SimulationResult } from "../engine/types";
+import type { SimulationResult } from "../../../engine/src/types";
 
 export interface P1StateContext {
   simulation?: SimulationResult;

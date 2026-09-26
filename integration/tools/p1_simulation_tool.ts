@@ -1,11 +1,11 @@
-import { DeterministicSimulator } from "../engine/simulation";
+import { DeterministicSimulator } from "../../engine/src/simulation";
 import type {
   CrowdGroupInput,
   SimulationParameters,
   SimulationResult,
-} from "../engine/types";
+} from "../../engine/src/types";
 
-import type { MitigationStrategy } from "../strategies/strategy_model";
+import type { MitigationStrategy } from "../../strategy/src/strategies/strategy_model";
 
 /**
  * P2 → P1 Simulation Tool

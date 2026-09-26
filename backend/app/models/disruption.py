@@ -6,7 +6,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 
 class Disruption(Base):

@@ -1,4 +1,4 @@
-# P1 → P3 Transport (`src/transport`)
+# P1 → P3 Transport (`integration/transport`)
 
 The runtime connection between the P1 crowd engine (TypeScript, pure
 calculation library) and the P3 backend API. P1 stays network-free; these
@@ -15,7 +15,7 @@ three modules are the only place where the engine meets HTTP.
 ## Endpoints and payload mapping (exact, existing P3 schemas)
 
 P3 validates these shapes in `backend/app/schemas/p1.py` (`extra="forbid"`),
-built field-for-field by P1's own serializers in `src/engine/serialization.ts`
+built field-for-field by P1's own serializers in `engine/src/serialization.ts`
 — no second wire format exists.
 
 ### 1. `POST /api/internal/crowd-state` — current crowd snapshot
@@ -79,7 +79,7 @@ Never commit a real key. The same value must be configured on both sides:
 - **Simulation results**: after a *completed* `SimulationResult` (whole-run
   boundary, never per internal calculation).
 
-The engine itself (`src/engine/*`) contains no HTTP code and is unchanged.
+The engine itself (`engine/src/*`) contains no HTTP code and is unchanged.
 
 ## Unresolved mappings (documented, never guessed)
 

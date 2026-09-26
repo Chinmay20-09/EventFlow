@@ -109,7 +109,7 @@ export function serializeSimulationResult(result: SimulationResult): Record<stri
 /**
  * Snake_case wire form of one `CapacityMetric` — the exact payload accepted by
  * `POST /api/internal/crowd-state` (backend/app/schemas/p1.py::P1CapacityMetric).
- * Exported for the P1→P3 transport client (src/transport); the serialization
+ * Exported for the P1→P3 transport client (integration/transport); the serialization
  * itself is unchanged.
  */
 export function serializeMetric(metric: CapacityMetric): Record<string, unknown> {

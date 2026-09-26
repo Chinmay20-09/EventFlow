@@ -10,7 +10,7 @@ import {
   runSandbox,
   serializeGraph,
   serializeSimulationResult,
-} from "../src/engine"
+} from "../src"
 
 const graphInput = {
   nodes: [

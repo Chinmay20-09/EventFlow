@@ -24,11 +24,11 @@ import type {
 
 import type {
   MitigationStrategy,
-} from "../strategies/strategy_model";
+} from "../../strategy/src/strategies/strategy_model";
 
 import type {
   SimulationResult,
-} from "../engine/types";
+} from "../../engine/src/types";
 
 // ============================================================
 // Tool Names

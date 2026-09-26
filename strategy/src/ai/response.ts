@@ -13,7 +13,7 @@
  * - claim strategy execution without confirmation
  */
 
-import type { SimulationResult } from "../engine/types";
+import type { SimulationResult } from "../../../engine/src/types";
 import type { MitigationStrategy } from "../strategies/strategy_model";
 
 // ============================================================

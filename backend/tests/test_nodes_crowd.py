@@ -6,7 +6,7 @@ crowd values (EV-003 §10, EV-016 §20).
 
 from app.db.session import get_sessionmaker
 from app.models.crowd import CrowdState
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 from conftest import create_event, create_node
 

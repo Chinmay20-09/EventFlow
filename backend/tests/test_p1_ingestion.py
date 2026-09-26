@@ -1,6 +1,6 @@
 """P1 → P3 integration tests (POST /api/internal/crowd-state, /api/internal/simulations).
 
-Contract source: Crowd-Engine `src/engine/serialization.ts` (serializeMetric /
+Contract source: Crowd-Engine `engine/src/serialization.ts` (serializeMetric /
 serializeSimulationResult). P3 validates and preserves P1 values — it never
 recalculates crowd metrics and never invents missing ones.
 

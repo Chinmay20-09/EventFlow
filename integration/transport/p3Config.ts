@@ -77,7 +77,7 @@ export function configFromEnv(
   if (!baseUrl) {
     throw new Error(
       "P3_BASE_URL is not configured. Set it to the P3 backend base URL, " +
-        "e.g. http://localhost:8000 (see src/transport/README.md).",
+        "e.g. http://localhost:8000 (see integration/transport/README.md).",
     )
   }
   const number = (name: string, fallback: number): number => {

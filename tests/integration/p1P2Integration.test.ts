@@ -3,7 +3,7 @@
  *
  * This is NOT a unit test with a fake simulation: the real P1 engine
  * (`DeterministicSimulator`, the same entry point P2's registered tool
- * `src/tools/p1_simulation_tool.ts::runBaselineSimulation` wraps) is executed
+ * `integration/tools/p1_simulation_tool.ts::runBaselineSimulation` wraps) is executed
  * against the known-good engine graph fixture, and its authoritative result is
  * fed through P2's real pipeline:
  *
@@ -19,17 +19,17 @@
 
 import { describe, expect, it } from "vitest"
 
-import { DeterministicSimulator, VenueGraph } from "../src/engine"
+import { DeterministicSimulator, VenueGraph } from "../../engine/src"
 
 import type {
   CrowdGroupInput,
   SimulationResult,
   VenueGraphInput,
-} from "../src/engine/types"
+} from "../../engine/src/types"
 
-import { P2Orchestrator } from "../src/ai/p2_orchestrator"
-import type { P1SimulationContext } from "../src/tools/p1_simulation_tool"
-import { runBaselineSimulation } from "../src/tools/p1_simulation_tool"
+import { P2Orchestrator } from "../../strategy/src/ai/p2_orchestrator"
+import type { P1SimulationContext } from "../../integration/tools/p1_simulation_tool"
+import { runBaselineSimulation } from "../../integration/tools/p1_simulation_tool"
 
 // ---------------------------------------------------------------
 // Real graph + crowd fixtures (same shapes the engine tests use).

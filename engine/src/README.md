@@ -1,6 +1,6 @@
 # EventFlow deterministic engine
 
-The public API is exported from `src/engine/index.ts`.
+The public API is exported from `engine/src/index.ts`.
 
 - `VenueGraph` validates and owns a serializable directed digital twin. `withOverrides`
   returns an isolated graph copy, so sandbox runs never mutate live input.
