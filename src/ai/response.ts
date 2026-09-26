@@ -3,7 +3,8 @@
  *
  * Responsibility:
  * - Interpret authoritative P1 simulation results.
- * - Explain bottlenecks, warnings and outcomes.
+ * - Interpret P2 route-intelligence decisions.
+ * - Explain bottlenecks, warnings, route decisions and outcomes.
  * - Produce organizer-friendly responses.
  *
  * P2 must NOT:
@@ -11,10 +12,13 @@
  * - recalculate P1 metrics
  * - override P1 results
  * - claim strategy execution without confirmation
+ * - claim that P1 selected the route
+ * - invent route distance, travel time or congestion
  */
 
 import type { SimulationResult } from "../engine/types";
 import type { MitigationStrategy } from "../strategies/strategy_model";
+import type { RouteObjective } from "./intent";
 
 // ============================================================
 // Types
@@ -31,6 +35,39 @@ export interface AIResponse {
     | "pending_approval"
     | "approved"
     | "executed";
+}
+
+/**
+ * Route metrics are authoritative values supplied by P1.
+ *
+ * P2 may interpret and present them, but must not calculate
+ * or modify them.
+ */
+export interface RouteMetrics {
+  distance?: number;
+  travelTime?: number;
+  congestion?: number;
+}
+
+/**
+ * Result produced by P2 RouteIntelligence.
+ *
+ * P2 is responsible for selecting the route.
+ * The numerical route metrics originate from P1.
+ */
+export interface RouteDecisionResult {
+  success: boolean;
+  objective?: RouteObjective;
+  selectedRoute?: {
+    nodes: string[];
+    metrics: RouteMetrics;
+  };
+  alternatives?: Array<{
+    nodes: string[];
+    metrics: RouteMetrics;
+  }>;
+  reason?: string;
+  error?: string;
 }
 
 // ============================================================
@@ -142,6 +179,107 @@ export function explainStrategyResult(
     warnings,
     execution_status: "pending_approval",
   };
+}
+
+// ============================================================
+// Route Decision Interpretation
+// ============================================================
+
+/**
+ * Interpret a route selected by P2 RouteIntelligence.
+ *
+ * Important boundary:
+ * - P2 selects the route.
+ * - P1 supplies the route-state metrics.
+ * - This function only interprets and formats those values.
+ */
+export function explainRouteDecision(
+  result: RouteDecisionResult,
+): AIResponse {
+  const findings: string[] = [];
+  const warnings: string[] = [];
+
+  if (!result.success || !result.selectedRoute) {
+    return {
+      summary:
+        result.error ??
+        "P2 could not determine a valid route from the available P1 state.",
+      findings: [],
+      warnings: [],
+      execution_status: "not_executed",
+    };
+  }
+
+  const selectedRoute = result.selectedRoute;
+  const objective = result.objective ?? "least_congested";
+
+  findings.push(
+    `P2 selected route: ${selectedRoute.nodes.join(" → ")}.`,
+  );
+
+  findings.push(
+    `Route objective: ${formatRouteObjective(objective)}.`,
+  );
+
+  if (selectedRoute.metrics.distance !== undefined) {
+    findings.push(
+      `Route distance from P1: ${selectedRoute.metrics.distance}.`,
+    );
+  }
+
+  if (selectedRoute.metrics.travelTime !== undefined) {
+    findings.push(
+      `Route travel time from P1: ${selectedRoute.metrics.travelTime}.`,
+    );
+  }
+
+  if (selectedRoute.metrics.congestion !== undefined) {
+    findings.push(
+      `Route congestion from P1: ${selectedRoute.metrics.congestion}.`,
+    );
+  }
+
+  if (result.reason) {
+    findings.push(result.reason);
+  }
+
+  if (result.alternatives && result.alternatives.length > 0) {
+    findings.push(
+      `${result.alternatives.length} alternative route(s) were evaluated by P2.`,
+    );
+  }
+
+  return {
+    summary:
+      "P2 evaluated the available route options using the current P1 network state and selected a route according to the requested objective.",
+    findings,
+    warnings,
+    execution_status: "not_executed",
+  };
+}
+
+/**
+ * Convert the internal route objective into organizer-friendly text.
+ */
+function formatRouteObjective(
+  objective: RouteObjective,
+): string {
+  switch (objective) {
+    case "least_congested":
+      return "least congested";
+
+    case "shortest":
+      return "shortest";
+
+    case "fastest":
+      return "fastest";
+
+    case "safest":
+      return "safest";
+
+    default:
+      return objective;
+  }
 }
 
 // ============================================================

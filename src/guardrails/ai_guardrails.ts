@@ -5,8 +5,28 @@
  *
  * Core principle:
  *
- * P2 proposes and explains.
- * P1 calculates, validates, simulates, and remains the source of truth.
+ * P2 proposes, decides, and explains.
+ * P1 calculates, validates, simulates, and remains the source of truth
+ * for authoritative simulation values.
+ *
+ * Route-specific boundary:
+ *
+ * P1 provides:
+ * - graph structure
+ * - node / edge state
+ * - distance
+ * - travel time
+ * - congestion / utilization / flow metrics
+ * - simulation state
+ *
+ * P2 provides:
+ * - route request understanding
+ * - route objective selection
+ * - candidate route evaluation
+ * - route selection
+ * - route explanation
+ *
+ * The LLM does NOT calculate or invent route metrics.
  *
  * These guardrails prevent the AI layer from:
  * - inventing simulation results
@@ -15,9 +35,14 @@
  * - bypassing safety constraints
  * - claiming an action was executed when it was not
  * - pretending that missing information is known
+ * - inventing route metrics
+ * - claiming that P1 selected a route when P2 selected it
  */
 
-import type { MitigationStrategy } from "../strategies/strategy_model";
+import type {
+  MitigationStrategy,
+} from "../strategies/strategy_model";
+
 
 // ============================================================
 // Types
@@ -29,12 +54,18 @@ export type AIActionType =
   | "request_simulation"
   | "request_validation"
   | "request_comparison"
+  | "find_route"
+  | "evaluate_route"
   | "execute_strategy";
+
 
 export interface AIGuardrailContext {
   p1ResultAvailable: boolean;
+
   p1ValidationPassed: boolean;
+
   strategyApproved: boolean;
+
   strategyExecuted: boolean;
 
   /**
@@ -48,17 +79,24 @@ export interface AIGuardrailContext {
   missingInformation: string[];
 }
 
+
 export interface AIGuardrailResult {
   allowed: boolean;
+
   errors: string[];
+
   warnings: string[];
 }
 
+
 export interface AIResponseValidation {
   valid: boolean;
+
   errors: string[];
+
   warnings: string[];
 }
+
 
 // ============================================================
 // Forbidden AI behavior
@@ -69,14 +107,38 @@ const FORBIDDEN_CLAIM_PATTERNS = [
   /\bI determined the capacity\b/i,
   /\bI determined the crowd density\b/i,
   /\bI determined the simulation result\b/i,
+
   /\bthe exact capacity is\b/i,
   /\bthe exact density is\b/i,
   /\bthe exact risk is\b/i,
+
   /\bthe simulation shows\b/i,
+
   /\bthe strategy was executed\b/i,
   /\bthe strategy has been executed\b/i,
   /\bI executed the strategy\b/i,
+
+  /*
+   * Route authority violations.
+   */
+  /\bI calculated the route\b/i,
+  /\bI calculated the distance\b/i,
+  /\bI calculated the travel time\b/i,
+  /\bI calculated the congestion\b/i,
+
+  /\bI determined the congestion\b/i,
+  /\bI determined the travel time\b/i,
+  /\bI determined the distance\b/i,
+
+  /\bthe exact congestion is\b/i,
+  /\bthe exact travel time is\b/i,
+  /\bthe exact distance is\b/i,
+
+  /\bP1 selected the route\b/i,
+  /\bP1 chose the route\b/i,
+  /\bP1 determined the best route\b/i,
 ];
+
 
 /**
  * Phrases indicating that the AI is claiming authority over
@@ -85,10 +147,106 @@ const FORBIDDEN_CLAIM_PATTERNS = [
 export function containsForbiddenAuthorityClaim(
   text: string,
 ): boolean {
-  return FORBIDDEN_CLAIM_PATTERNS.some((pattern) =>
-    pattern.test(text),
+
+  return FORBIDDEN_CLAIM_PATTERNS.some(
+    (pattern) =>
+      pattern.test(text),
   );
 }
+
+
+// ============================================================
+// Route-specific claim guardrail
+// ============================================================
+
+/**
+ * Validates claims made about route decisions.
+ *
+ * Important distinction:
+ *
+ * P1 supplies the underlying numerical state.
+ * P2 selects the route using that state.
+ *
+ * Therefore:
+ *
+ * "P2 selected route G1 → N2 → V1"
+ *
+ * is allowed.
+ *
+ * But:
+ *
+ * "P1 selected the best route"
+ *
+ * is not allowed.
+ */
+export function validateRouteClaim(
+  claim: string,
+  context: AIGuardrailContext,
+): AIGuardrailResult {
+
+  const errors: string[] = [];
+
+  const warnings: string[] = [];
+
+
+  if (
+    /\bP1 selected the route\b/i.test(
+      claim,
+    ) ||
+    /\bP1 chose the route\b/i.test(
+      claim,
+    ) ||
+    /\bP1 determined the best route\b/i.test(
+      claim,
+    )
+  ) {
+
+    errors.push(
+      "P1 provides route state and metrics; P2 owns route selection.",
+    );
+
+  }
+
+
+  if (
+    /\bselected route\b/i.test(
+      claim,
+    ) &&
+    !context.p1ResultAvailable
+  ) {
+
+    errors.push(
+      "A selected route cannot be presented as authoritative without the required P1 state.",
+    );
+
+  }
+
+
+  if (
+    /\b(distance|travel time|congestion|utilization|flow)\b/i.test(
+      claim,
+    ) &&
+    !context.p1ResultAvailable
+  ) {
+
+    warnings.push(
+      "Route metrics should only be presented when the corresponding P1 state is available.",
+    );
+
+  }
+
+
+  return {
+    allowed:
+      errors.length === 0,
+
+    errors,
+
+    warnings,
+  };
+
+}
+
 
 // ============================================================
 // Action-level guardrails
@@ -102,86 +260,186 @@ export function validateAIAction(
   action: AIActionType,
   context: AIGuardrailContext,
 ): AIGuardrailResult {
+
   const errors: string[] = [];
+
   const warnings: string[] = [];
 
+
   switch (action) {
+
     // --------------------------------------------------------
     // Explanation
     // --------------------------------------------------------
+
     case "explain":
+
       break;
+
 
     // --------------------------------------------------------
     // Strategy proposal
     // --------------------------------------------------------
+
     case "propose_strategy":
-      if (context.missingInformation.length > 0) {
+
+      if (
+        context.missingInformation.length > 0
+      ) {
+
         warnings.push(
           "Some information is missing. The AI may propose a candidate strategy, but must not invent the missing values.",
         );
+
       }
 
       break;
+
 
     // --------------------------------------------------------
     // Request P1 simulation
     // --------------------------------------------------------
+
     case "request_simulation":
-      if (!context.p1ResultAvailable) {
+
+      if (
+        !context.p1ResultAvailable
+      ) {
+
         warnings.push(
           "No P1 simulation result is currently available. The AI must request simulation instead of claiming a result.",
         );
+
       }
 
       break;
+
 
     // --------------------------------------------------------
     // Request P1 validation
     // --------------------------------------------------------
+
     case "request_validation":
+
       break;
+
 
     // --------------------------------------------------------
     // Compare simulation results
     // --------------------------------------------------------
+
     case "request_comparison":
-      if (!context.p1ResultAvailable) {
+
+      if (
+        !context.p1ResultAvailable
+      ) {
+
         errors.push(
           "Simulation comparison requires P1 simulation results.",
         );
+
       }
 
       break;
+
+
+    // --------------------------------------------------------
+    // Route finding
+    // --------------------------------------------------------
+
+    case "find_route":
+
+      if (
+        !context.p1ResultAvailable
+      ) {
+
+        errors.push(
+          "Route selection requires P1 graph/state information.",
+        );
+
+      }
+
+      if (
+        context.missingInformation.length > 0
+      ) {
+
+        warnings.push(
+          "Some route information is missing. P2 must not invent source, destination, or route metrics.",
+        );
+
+      }
+
+      break;
+
+
+    // --------------------------------------------------------
+    // Route evaluation
+    // --------------------------------------------------------
+
+    case "evaluate_route":
+
+      if (
+        !context.p1ResultAvailable
+      ) {
+
+        errors.push(
+          "Route evaluation requires P1 graph/state information.",
+        );
+
+      }
+
+      break;
+
 
     // --------------------------------------------------------
     // Execute strategy
     // --------------------------------------------------------
+
     case "execute_strategy":
-      if (!context.p1ValidationPassed) {
+
+      if (
+        !context.p1ValidationPassed
+      ) {
+
         errors.push(
           "A strategy cannot be executed before P1 validation passes.",
         );
+
       }
 
-      if (!context.strategyApproved) {
+      if (
+        !context.strategyApproved
+      ) {
+
         errors.push(
           "A strategy cannot be executed before organizer approval.",
         );
+
       }
 
       break;
 
+
     default:
-      errors.push("Unknown AI action.");
+
+      errors.push(
+        "Unknown AI action.",
+      );
+
   }
 
+
   return {
-    allowed: errors.length === 0,
+    allowed:
+      errors.length === 0,
+
     errors,
+
     warnings,
   };
+
 }
+
 
 // ============================================================
 // Strategy guardrails
@@ -195,45 +453,90 @@ export function validateAIAction(
 export function validateStrategyProposal(
   strategy: MitigationStrategy,
 ): AIGuardrailResult {
+
   const errors: string[] = [];
+
   const warnings: string[] = [];
 
-  if (!strategy.strategy_id) {
-    errors.push("Strategy ID is required.");
+
+  if (
+    !strategy.strategy_id
+  ) {
+
+    errors.push(
+      "Strategy ID is required.",
+    );
+
   }
 
-  if (!strategy.name?.trim()) {
-    errors.push("Strategy name is required.");
+
+  if (
+    !strategy.name?.trim()
+  ) {
+
+    errors.push(
+      "Strategy name is required.",
+    );
+
   }
 
-  if (!strategy.description?.trim()) {
-    errors.push("Strategy description is required.");
+
+  if (
+    !strategy.description?.trim()
+  ) {
+
+    errors.push(
+      "Strategy description is required.",
+    );
+
   }
 
-  if (!strategy.actions || strategy.actions.length === 0) {
+
+  if (
+    !strategy.actions ||
+    strategy.actions.length === 0
+  ) {
+
     errors.push(
       "Strategy must contain at least one action.",
     );
+
   }
 
-  if (!strategy.parameters) {
+
+  if (
+    !strategy.parameters
+  ) {
+
     errors.push(
       "Strategy parameters must be explicitly represented.",
     );
+
   }
 
-  if (strategy.approval_required !== true) {
+
+  if (
+    strategy.approval_required !== true
+  ) {
+
     warnings.push(
       "Mitigation strategies should normally require organizer approval.",
     );
+
   }
 
+
   return {
-    allowed: errors.length === 0,
+    allowed:
+      errors.length === 0,
+
     errors,
+
     warnings,
   };
+
 }
+
 
 // ============================================================
 // P1 authority guardrail
@@ -249,27 +552,63 @@ export function validateP1DependentClaim(
   claim: string,
   context: AIGuardrailContext,
 ): AIGuardrailResult {
+
   const errors: string[] = [];
+
   const warnings: string[] = [];
 
-  if (containsForbiddenAuthorityClaim(claim)) {
+
+  if (
+    containsForbiddenAuthorityClaim(
+      claim,
+    )
+  ) {
+
     errors.push(
       "AI must not claim authoritative simulation calculations.",
     );
+
   }
 
-  if (!context.p1ResultAvailable) {
+
+  if (
+    !context.p1ResultAvailable
+  ) {
+
     warnings.push(
       "The requested claim may depend on P1 results that are not currently available.",
     );
+
   }
 
+
+  const routeValidation =
+    validateRouteClaim(
+      claim,
+      context,
+    );
+
+
+  errors.push(
+    ...routeValidation.errors,
+  );
+
+  warnings.push(
+    ...routeValidation.warnings,
+  );
+
+
   return {
-    allowed: errors.length === 0,
+    allowed:
+      errors.length === 0,
+
     errors,
+
     warnings,
   };
+
 }
+
 
 // ============================================================
 // Missing information guardrail
@@ -283,22 +622,40 @@ export function validateRequiredInformation(
   requiredInformation: string[],
   context: AIGuardrailContext,
 ): AIGuardrailResult {
+
   const errors: string[] = [];
 
-  for (const required of requiredInformation) {
-    if (context.missingInformation.includes(required)) {
+
+  for (
+    const required of requiredInformation
+  ) {
+
+    if (
+      context.missingInformation.includes(
+        required,
+      )
+    ) {
+
       errors.push(
         `Required information is missing: ${required}`,
       );
+
     }
+
   }
 
+
   return {
-    allowed: errors.length === 0,
+    allowed:
+      errors.length === 0,
+
     errors,
+
     warnings: [],
   };
+
 }
+
 
 // ============================================================
 // Execution guardrail
@@ -314,32 +671,54 @@ export function validateRequiredInformation(
 export function validateExecutionClaim(
   context: AIGuardrailContext,
 ): AIGuardrailResult {
+
   const errors: string[] = [];
 
-  if (!context.strategyApproved) {
+
+  if (
+    !context.strategyApproved
+  ) {
+
     errors.push(
       "Strategy has not received organizer approval.",
     );
+
   }
 
-  if (!context.p1ValidationPassed) {
+
+  if (
+    !context.p1ValidationPassed
+  ) {
+
     errors.push(
       "Strategy has not passed P1 validation.",
     );
+
   }
 
-  if (!context.strategyExecuted) {
+
+  if (
+    !context.strategyExecuted
+  ) {
+
     errors.push(
       "Strategy has not been confirmed as executed.",
     );
+
   }
 
+
   return {
-    allowed: errors.length === 0,
+    allowed:
+      errors.length === 0,
+
     errors,
+
     warnings: [],
   };
+
 }
+
 
 // ============================================================
 // AI response validation
@@ -355,43 +734,103 @@ export function validateAIResponse(
   response: string,
   context: AIGuardrailContext,
 ): AIResponseValidation {
+
   const errors: string[] = [];
+
   const warnings: string[] = [];
 
-  if (!response.trim()) {
-    errors.push("AI response cannot be empty.");
+
+  if (
+    !response.trim()
+  ) {
+
+    errors.push(
+      "AI response cannot be empty.",
+    );
+
   }
 
-  if (containsForbiddenAuthorityClaim(response)) {
+
+  if (
+    containsForbiddenAuthorityClaim(
+      response,
+    )
+  ) {
+
     errors.push(
       "AI response contains a claim that may incorrectly present the AI as the authoritative simulation source.",
     );
+
   }
+
+
+  /* --------------------------------------------------------
+     Route claim validation
+  -------------------------------------------------------- */
+
+  const routeValidation =
+    validateRouteClaim(
+      response,
+      context,
+    );
+
+
+  errors.push(
+    ...routeValidation.errors,
+  );
+
+  warnings.push(
+    ...routeValidation.warnings,
+  );
+
+
+  /* --------------------------------------------------------
+     Execution validation
+  -------------------------------------------------------- */
 
   if (
     !context.strategyExecuted &&
-    /\bexecuted\b/i.test(response)
+    /\bexecuted\b/i.test(
+      response,
+    )
   ) {
+
     errors.push(
       "AI must not claim that a strategy was executed without execution confirmation.",
     );
+
   }
+
+
+  /* --------------------------------------------------------
+     Missing information
+  -------------------------------------------------------- */
 
   if (
     context.missingInformation.length > 0 &&
-    /\bconfirmed\b/i.test(response)
+    /\bconfirmed\b/i.test(
+      response,
+    )
   ) {
+
     warnings.push(
       "Response contains a confirmation claim while required information may still be missing.",
     );
+
   }
 
+
   return {
-    valid: errors.length === 0,
+    valid:
+      errors.length === 0,
+
     errors,
+
     warnings,
   };
+
 }
+
 
 // ============================================================
 // Context priority
@@ -413,8 +852,10 @@ export const AI_CONTEXT_PRIORITY = [
   "AI_ASSUMPTIONS",
 ] as const;
 
+
 export type AIContextPriority =
   (typeof AI_CONTEXT_PRIORITY)[number];
+
 
 /**
  * Returns whether one context source has higher priority
@@ -424,8 +865,14 @@ export function hasHigherContextPriority(
   first: AIContextPriority,
   second: AIContextPriority,
 ): boolean {
+
   return (
-    AI_CONTEXT_PRIORITY.indexOf(first) <
-    AI_CONTEXT_PRIORITY.indexOf(second)
+    AI_CONTEXT_PRIORITY.indexOf(
+      first,
+    ) <
+    AI_CONTEXT_PRIORITY.indexOf(
+      second,
+    )
   );
+
 }

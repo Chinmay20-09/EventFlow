@@ -2,6 +2,10 @@ import Groq from "groq-sdk";
 import type { AIContext } from "./context";
 import { buildAIContextPayload } from "./context";
 
+// ============================================================
+// Types
+// ============================================================
+
 export interface LLMRequest {
   system_prompt: string;
   user_prompt: string;
@@ -24,18 +28,34 @@ export interface StructuredAIOutput {
   reasoning?: string[];
   clarification_question?: string;
   proposed_parameters?: Record<string, unknown>;
+
+  /**
+   * Route information is descriptive only.
+   *
+   * The actual route is selected by P2 RouteIntelligence,
+   * not by the LLM.
+   */
+  route_explanation?: string;
+
   requires_p1_validation: boolean;
 }
+
+// ============================================================
+// P2 SYSTEM PROMPT
+// ============================================================
 
 export const P2_SYSTEM_PROMPT = `
 You are the P2 AI Strategy Intelligence layer of EventFlow.
 
 Your responsibility is to understand organizer requests, interpret P1 simulation
-results, propose mitigation strategies, explain results, and guide the organizer.
+results, select and explain routes, propose mitigation strategies, explain
+results, and guide the organizer.
 
 IMPORTANT ARCHITECTURE RULE:
 
 P1 is the authoritative deterministic simulation engine.
+
+P2 is the intelligence and decision layer.
 
 P2 may:
 - Understand natural-language organizer requests.
@@ -46,10 +66,43 @@ P2 may:
 - Request P1 validation.
 - Request P1 simulation.
 - Interpret P1 results.
+- Generate candidate routes using the P1 graph.
+- Evaluate candidate routes using P1-provided values.
+- Select a route according to the organizer's requested objective.
+- Explain why P2 selected a route.
 - Explain bottlenecks and warnings.
 - Explain strategy outcomes.
 - Ask clarification questions.
 - Explain what should happen next.
+
+ROUTE DECISION ARCHITECTURE:
+
+P1 provides the authoritative network state, including:
+- graph structure
+- traversability
+- edge distance
+- edge travel time
+- edge utilization/congestion values
+- simulation state
+
+P2 RouteIntelligence is responsible for:
+- generating candidate routes
+- evaluating candidate routes
+- applying the requested route objective
+- selecting the route
+- providing the route decision to the organizer
+
+The LLM does NOT calculate or select the route.
+
+When route information is supplied in the context:
+- Treat the selected route as a P2 decision.
+- Treat distance, travel time and congestion values as P1-provided values.
+- Explain the route decision using the supplied values.
+- Do not recalculate route metrics.
+- Do not invent alternative routes.
+- Do not replace the P2-selected route.
+- Do not claim that P1 selected the route.
+- Do not claim that Groq calculated the route.
 
 P2 must NOT:
 - Invent simulation results.
@@ -59,15 +112,23 @@ P2 must NOT:
 - Invent crowd-flow measurements.
 - Invent bottlenecks.
 - Invent risk values.
+- Invent route metrics.
+- Invent route congestion.
+- Invent route travel time.
+- Invent route distance.
 - Perform authoritative simulation calculations.
+- Recalculate P1 metrics.
 - Override P1 results.
 - Override safety constraints.
 - Claim that a strategy was validated unless P1 validated it.
 - Claim that a strategy was executed unless the execution system confirms it.
 - Create strategies outside the approved strategy catalog.
 - Treat assumptions as actual event data.
+- Select a route independently of RouteIntelligence.
 
 If numerical simulation information is missing, say that P1 must provide it.
+
+If route information is missing, do not invent a route.
 
 When proposing a strategy, use only strategies available in the supplied
 strategy catalog.
@@ -75,12 +136,12 @@ strategy catalog.
 Return structured JSON only.
 `;
 
-/* ---------------------------------------------------------
-   Build LLM Request
---------------------------------------------------------- */
+// ============================================================
+// Build LLM Request
+// ============================================================
 
 export function buildLLMRequest(
-  context: AIContext
+  context: AIContext,
 ): LLMRequest {
   return {
     system_prompt: P2_SYSTEM_PROMPT,
@@ -89,12 +150,12 @@ export function buildLLMRequest(
   };
 }
 
-/* ---------------------------------------------------------
-   Parse LLM Response
---------------------------------------------------------- */
+// ============================================================
+// Parse LLM Response
+// ============================================================
 
 export function parseLLMResponse(
-  response: LLMResponse
+  response: LLMResponse,
 ): StructuredAIOutput {
   const text = response.text.trim();
 
@@ -116,7 +177,7 @@ export function parseLLMResponse(
     Array.isArray(parsed)
   ) {
     throw new Error(
-      "LLM response must be a JSON object."
+      "LLM response must be a JSON object.",
     );
   }
 
@@ -143,7 +204,7 @@ export function parseLLMResponse(
       Array.isArray(data.reasoning)
         ? data.reasoning.filter(
             (item): item is string =>
-              typeof item === "string"
+              typeof item === "string",
           )
         : undefined,
 
@@ -164,6 +225,11 @@ export function parseLLMResponse(
           )
         : undefined,
 
+    route_explanation:
+      typeof data.route_explanation === "string"
+        ? data.route_explanation
+        : undefined,
+
     requires_p1_validation:
       typeof data.requires_p1_validation === "boolean"
         ? data.requires_p1_validation
@@ -171,9 +237,9 @@ export function parseLLMResponse(
   };
 }
 
-/* ---------------------------------------------------------
-   Groq LLM Provider
---------------------------------------------------------- */
+// ============================================================
+// Groq LLM Provider
+// ============================================================
 
 export class GroqLLMProvider
   implements LLMProvider
@@ -183,29 +249,30 @@ export class GroqLLMProvider
 
   constructor(
     apiKey: string,
-    model: string = "openai/gpt-oss-20b"
+    model: string = "openai/gpt-oss-20b",
   ) {
     if (!apiKey) {
       throw new Error(
-        "Groq API key is missing."
+        "Groq API key is missing.",
       );
     }
 
     this.client = new Groq({
-      apiKey: apiKey,
+      apiKey,
     });
 
     this.model = model;
   }
 
   async generate(
-    request: LLMRequest
+    request: LLMRequest,
   ): Promise<LLMResponse> {
-    const contextJson = JSON.stringify(
-      request.context,
-      null,
-      2
-    );
+    const contextJson =
+      JSON.stringify(
+        request.context,
+        null,
+        2,
+      );
 
     const userContent = `
 ORGANIZER REQUEST:
@@ -225,6 +292,7 @@ Return ONLY a JSON object using this structure:
   "reasoning": ["string"],
   "clarification_question": "string",
   "proposed_parameters": {},
+  "route_explanation": "string",
   "requires_p1_validation": true
 }
 
@@ -232,6 +300,12 @@ Rules:
 - Only use strategies present in the supplied strategy catalog.
 - Never invent P1 numerical results.
 - Never invent capacity, density, occupancy, flow, queue, risk, or simulation values.
+- Never invent route distance, route travel time, or route congestion.
+- Never calculate or select a route independently.
+- Route selection belongs to P2 RouteIntelligence.
+- If a selected route is supplied in the context, explain that P2 decision.
+- Never claim that P1 selected a route.
+- Never claim that Groq selected a route.
 - Never claim that P1 validated something unless the P1 result explicitly says so.
 - Never claim that a strategy was executed.
 - Proposed parameters are suggestions only.
@@ -268,12 +342,12 @@ Rules:
 
       if (!text) {
         throw new Error(
-          "Groq returned an empty response."
+          "Groq returned an empty response.",
         );
       }
 
       return {
-        text: text,
+        text,
         raw: response,
       };
     } catch (error) {
@@ -283,21 +357,21 @@ Rules:
           : "Unknown Groq API error.";
 
       throw new Error(
-        `Groq LLM request failed: ${message}`
+        `Groq LLM request failed: ${message}`,
       );
     }
   }
 }
 
-/* ---------------------------------------------------------
-   Mock Provider
---------------------------------------------------------- */
+// ============================================================
+// Mock Provider
+// ============================================================
 
 export class MockLLMProvider
   implements LLMProvider
 {
   async generate(
-    _request: LLMRequest
+    _request: LLMRequest,
   ): Promise<LLMResponse> {
     return {
       text: JSON.stringify({
@@ -310,15 +384,16 @@ export class MockLLMProvider
         ],
         clarification_question: null,
         proposed_parameters: {},
+        route_explanation: null,
         requires_p1_validation: true,
       }),
     };
   }
 }
 
-/* ---------------------------------------------------------
-   P2 LLM Service
---------------------------------------------------------- */
+// ============================================================
+// P2 LLM Service
+// ============================================================
 
 export class P2LLMService {
   private readonly provider: LLMProvider;
@@ -328,7 +403,7 @@ export class P2LLMService {
   }
 
   async generate(
-    context: AIContext
+    context: AIContext,
   ): Promise<StructuredAIOutput> {
     const request =
       buildLLMRequest(context);

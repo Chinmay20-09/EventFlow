@@ -35,6 +35,10 @@ import type {
 } from "../tools/p1_simulation_tool";
 
 import {
+  RouteIntelligence,
+} from "./route_intelligence";
+
+import {
   explainSimulationResult,
   formatOrganizerResponse,
 } from "./response";
@@ -93,6 +97,23 @@ export interface P2OrchestratorResult {
 
 
 /* =========================================================
+   ROUTE HANDLER RESULT
+========================================================= */
+
+type RouteHandlerSuccess = {
+  success: true;
+
+  routeResult: ReturnType<
+    RouteIntelligence["findBestRoute"]
+  >;
+};
+
+type RouteHandlerResult =
+  | RouteHandlerSuccess
+  | P2OrchestratorResult;
+
+
+/* =========================================================
    P2 ORCHESTRATOR
 ========================================================= */
 
@@ -105,7 +126,7 @@ export class P2Orchestrator {
 
     if (!apiKey) {
       throw new Error(
-        "VITE_GROQ_API_KEY is missing. Add it to your .env file."
+        "VITE_GROQ_API_KEY is missing. Add it to your .env file.",
       );
     }
 
@@ -122,7 +143,7 @@ export class P2Orchestrator {
   ======================================================= */
 
   async process(
-    input: P2OrchestratorInput
+    input: P2OrchestratorInput,
   ): Promise<P2OrchestratorResult> {
 
     const request =
@@ -155,7 +176,7 @@ export class P2Orchestrator {
         createAIContext(
           request,
           intentResult.intent,
-          intentResult.entities
+          intentResult.entities,
         );
 
 
@@ -219,27 +240,17 @@ export class P2Orchestrator {
 
       const strategySelection =
         selectCandidateStrategies(
-          context
+          context,
         );
 
 
       /* ---------------------------------------------------
-         8. Groq
-      --------------------------------------------------- */
-
-      const llmResponse =
-        await this.llm.generate(
-          context
-        );
-
-
-      /* ---------------------------------------------------
-         9. Baseline P1 analysis
+         8. P1 baseline analysis
       --------------------------------------------------- */
 
       if (
         this.requiresBaselineAnalysis(
-          intentResult.intent
+          intentResult.intent,
         )
       ) {
 
@@ -263,7 +274,7 @@ export class P2Orchestrator {
         const baselineResponse =
           this.runBaselineAnalysis(
             input.p1_context,
-            context
+            context,
           );
 
 
@@ -287,7 +298,100 @@ export class P2Orchestrator {
 
 
       /* ---------------------------------------------------
-         10. Strategy request
+         9. P2 ROUTE INTELLIGENCE
+      --------------------------------------------------- */
+
+      if (
+        intentResult.intent ===
+        "find_route"
+      ) {
+
+        if (!input.p1_context) {
+
+          return {
+            success: false,
+
+            intent:
+              "find_route",
+
+            response:
+              "A P1 context is required before P2 can determine a route.",
+
+            context,
+          };
+
+        }
+
+
+        const routeResult =
+          this.handleRouteRequest(
+            context,
+            input.p1_context,
+          );
+
+
+        /*
+         * IMPORTANT:
+         *
+         * P2OrchestratorResult and RouteHandlerSuccess
+         * both contain `success`, so checking
+         * `success === true` alone is not enough for
+         * TypeScript to know that routeResult exists.
+         *
+         * The `in` check explicitly narrows the union.
+         */
+        if (
+          !("routeResult" in routeResult)
+        ) {
+
+          return routeResult;
+
+        }
+
+
+        /*
+         * Groq explains the already-selected route.
+         *
+         * Groq does NOT calculate the route.
+         */
+        const llmResponse =
+          await this.llm.generate(
+            context,
+          );
+
+
+        return this.handleRouteResponse(
+          context,
+          routeResult,
+          llmResponse,
+        );
+      }
+
+
+      /* ---------------------------------------------------
+         10. Groq
+      --------------------------------------------------- */
+
+      const llmResponse =
+        await this.llm.generate(
+          context,
+        );
+
+      console.log(
+        "===== GROQ RESPONSE =====",
+      );
+
+      console.log(
+        JSON.stringify(
+          llmResponse,
+          null,
+          2,
+        ),
+      );
+
+
+      /* ---------------------------------------------------
+         11. Strategy request
       --------------------------------------------------- */
 
       if (
@@ -298,14 +402,14 @@ export class P2Orchestrator {
         return this.handleStrategyRequest(
           context,
           strategySelection,
-          llmResponse
+          llmResponse,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         11. Strategy simulation
+         12. Strategy simulation
       --------------------------------------------------- */
 
       if (
@@ -316,14 +420,14 @@ export class P2Orchestrator {
         return this.handleStrategySimulation(
           context,
           input.p1_context,
-          llmResponse
+          llmResponse,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         12. Comparison
+         13. Comparison
       --------------------------------------------------- */
 
       if (
@@ -332,14 +436,14 @@ export class P2Orchestrator {
       ) {
 
         return this.handleComparison(
-          context
+          context,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         13. Explanation
+         14. Explanation
       --------------------------------------------------- */
 
       if (
@@ -348,14 +452,14 @@ export class P2Orchestrator {
       ) {
 
         return this.handleExplanation(
-          context
+          context,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         14. Approval
+         15. Approval
       --------------------------------------------------- */
 
       if (
@@ -364,14 +468,14 @@ export class P2Orchestrator {
       ) {
 
         return this.handleApproval(
-          context
+          context,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         15. Rejection
+         16. Rejection
       --------------------------------------------------- */
 
       if (
@@ -380,14 +484,14 @@ export class P2Orchestrator {
       ) {
 
         return this.handleRejection(
-          context
+          context,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         16. Execution
+         17. Execution
       --------------------------------------------------- */
 
       if (
@@ -396,14 +500,14 @@ export class P2Orchestrator {
       ) {
 
         return this.handleExecution(
-          context
+          context,
         );
 
       }
 
 
       /* ---------------------------------------------------
-         17. Generic AI response
+         18. Generic AI response
       --------------------------------------------------- */
 
       const response: AIResponse = {
@@ -427,7 +531,7 @@ export class P2Orchestrator {
 
       return this.validateAndReturnResponse(
         context,
-        response
+        response,
       );
 
     } catch (error) {
@@ -458,9 +562,10 @@ export class P2Orchestrator {
 
   private runBaselineAnalysis(
     p1Context: P1SimulationContext,
+
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ):
     | {
         success: true;
@@ -493,7 +598,7 @@ export class P2Orchestrator {
 
         data:
           toolResult.data,
-      }
+      },
     );
 
 
@@ -527,6 +632,263 @@ export class P2Orchestrator {
 
 
   /* =======================================================
+     ROUTE REQUEST
+  ======================================================= */
+
+  private handleRouteRequest(
+    context: ReturnType<
+      typeof createAIContext
+    >,
+
+    p1Context: P1SimulationContext,
+  ): RouteHandlerResult {
+
+    const route =
+      context.route;
+
+
+    if (!route?.source) {
+
+      return {
+        success: false,
+
+        intent:
+          "find_route",
+
+        response:
+          "Please specify the starting point for the route.",
+
+        context,
+      };
+
+    }
+
+
+    if (!route.destination) {
+
+      return {
+        success: false,
+
+        intent:
+          "find_route",
+
+        response:
+          "Please specify the destination for the route.",
+
+        context,
+      };
+
+    }
+
+
+    /*
+     * If the organizer says "best route"
+     * without specifying an objective,
+     * P2 uses least congestion.
+     */
+    const objective =
+      route.objective ??
+      "least_congested";
+
+
+    /*
+     * P2 owns route selection.
+     *
+     * P1 supplies:
+     * - graph
+     * - simulation
+     * - edge metrics
+     *
+     * P2 decides:
+     * - candidate routes
+     * - objective
+     * - selected route
+     */
+    const intelligence =
+      new RouteIntelligence(
+        p1Context.graph,
+        context.p1_state.simulation,
+      );
+
+
+    const routeDecision =
+      intelligence.findBestRoute({
+        source:
+          route.source,
+
+        destination:
+          route.destination,
+
+        objective,
+      });
+
+
+    /*
+     * Store the P2 decision as a tool result.
+     */
+    addToolResult(
+      context,
+      {
+        tool_name:
+          "p2_route_intelligence",
+
+        success:
+          routeDecision.success,
+
+        summary:
+          routeDecision.success
+            ? "P2 selected a route using P1 graph and simulation values."
+            : "P2 could not determine a valid route.",
+
+        data:
+          routeDecision,
+      },
+    );
+
+
+    if (!routeDecision.success) {
+
+      return {
+        success: false,
+
+        intent:
+          "find_route",
+
+        response:
+          routeDecision.error ??
+          "P2 could not determine a route.",
+
+        context,
+      };
+
+    }
+
+
+    return {
+      success: true,
+
+      routeResult:
+        routeDecision,
+    };
+
+  }
+
+
+  /* =======================================================
+     ROUTE RESPONSE
+  ======================================================= */
+
+  private handleRouteResponse(
+    context: ReturnType<
+      typeof createAIContext
+    >,
+
+    routeResult: RouteHandlerSuccess,
+
+    llmResponse: Awaited<
+      ReturnType<
+        P2LLMService["generate"]
+      >
+    >,
+  ): P2OrchestratorResult {
+
+    const result =
+      routeResult.routeResult;
+
+
+    const selected =
+      result.selectedRoute;
+
+
+    if (!selected) {
+
+      return {
+        success: false,
+
+        intent:
+          "find_route",
+
+        response:
+          "P2 did not return a selected route.",
+
+        context,
+      };
+
+    }
+
+
+    /*
+     * Route path selected by P2.
+     */
+    const routePath =
+      selected.nodes.join(" → ");
+
+
+    /*
+     * Metrics originate from P1 graph/simulation data.
+     */
+    const routeMetrics =
+      `Distance: ${selected.metrics.distance}, ` +
+      `Travel time: ${selected.metrics.travelTime}, ` +
+      `Congestion: ${selected.metrics.congestion.toFixed(3)}`;
+
+
+    const findings: string[] = [
+      `Selected route: ${routePath}.`,
+      `Objective: ${result.objective}.`,
+      routeMetrics,
+    ];
+
+
+    if (
+      result.alternatives.length > 0
+    ) {
+
+      findings.push(
+        `P2 evaluated ${result.alternatives.length + 1} candidate route(s).`,
+      );
+
+    }
+
+
+    /*
+     * Groq only explains the P2 decision.
+     */
+    const summary =
+      llmResponse.explanation ??
+      result.reason ??
+      "P2 selected a route using the available P1 state.";
+
+
+    const response: AIResponse = {
+
+      summary,
+
+      findings,
+
+      strategy:
+        `Route: ${routePath}`,
+
+      recommendation:
+        result.reason ??
+        "The selected route satisfies the requested routing objective.",
+
+      warnings: [],
+
+      execution_status:
+        "not_executed",
+    };
+
+
+    return this.validateAndReturnResponse(
+      context,
+      response,
+    );
+
+  }
+
+
+  /* =======================================================
      STRATEGY REQUEST
   ======================================================= */
 
@@ -543,7 +905,7 @@ export class P2Orchestrator {
       ReturnType<
         P2LLMService["generate"]
       >
-    >
+    >,
   ): P2OrchestratorResult {
 
     if (
@@ -593,7 +955,7 @@ export class P2Orchestrator {
       candidates
         .map(
           (strategy) =>
-            `${strategy.strategy_id}: ${strategy.name}`
+            `${strategy.strategy_id}: ${strategy.name}`,
         )
         .join("\n");
 
@@ -606,7 +968,7 @@ export class P2Orchestrator {
       findings:
         candidates.map(
           (strategy) =>
-            `${strategy.strategy_id}: ${strategy.name}`
+            `${strategy.strategy_id}: ${strategy.name}`,
         ),
 
       strategy:
@@ -627,7 +989,7 @@ export class P2Orchestrator {
 
     return this.validateAndReturnResponse(
       context,
-      response
+      response,
     );
 
   }
@@ -649,7 +1011,7 @@ export class P2Orchestrator {
       ReturnType<
         P2LLMService["generate"]
       >
-    >
+    >,
   ): P2OrchestratorResult {
 
     const strategyId =
@@ -717,7 +1079,7 @@ export class P2Orchestrator {
 
     const validation =
       p2ToolRegistry.validateStrategy(
-        strategy
+        strategy,
       );
 
 
@@ -746,7 +1108,7 @@ export class P2Orchestrator {
     const simulation =
       p2ToolRegistry.simulateStrategy({
         context: p1Context,
-        strategy: strategy,
+        strategy,
       });
 
 
@@ -766,15 +1128,13 @@ export class P2Orchestrator {
 
         data:
           simulation.data,
-      }
+      },
     );
 
 
     /*
-     * Current P1 only exposes baseline simulation.
      * Never fabricate strategy results.
      */
-
     if (!simulation.success) {
 
       return {
@@ -833,7 +1193,7 @@ export class P2Orchestrator {
 
     return this.validateAndReturnResponse(
       context,
-      response
+      response,
     );
 
   }
@@ -846,7 +1206,7 @@ export class P2Orchestrator {
   private handleComparison(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): P2OrchestratorResult {
 
     const simulation =
@@ -892,7 +1252,7 @@ export class P2Orchestrator {
   private handleExplanation(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): P2OrchestratorResult {
 
     const result =
@@ -918,7 +1278,7 @@ export class P2Orchestrator {
 
     const explanation =
       explainSimulationResult(
-        result
+        result,
       );
 
 
@@ -930,7 +1290,7 @@ export class P2Orchestrator {
 
       response:
         formatOrganizerResponse(
-          explanation
+          explanation,
         ),
 
       context,
@@ -946,7 +1306,7 @@ export class P2Orchestrator {
   private handleApproval(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): P2OrchestratorResult {
 
     const strategyId =
@@ -992,7 +1352,7 @@ export class P2Orchestrator {
   private handleRejection(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): P2OrchestratorResult {
 
     const strategyId =
@@ -1038,7 +1398,7 @@ export class P2Orchestrator {
   private handleExecution(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): P2OrchestratorResult {
 
     const strategyId =
@@ -1082,7 +1442,7 @@ export class P2Orchestrator {
   ======================================================= */
 
   private requiresBaselineAnalysis(
-    intent: string
+    intent: string,
   ): boolean {
 
     return (
@@ -1093,7 +1453,10 @@ export class P2Orchestrator {
         "identify_bottleneck" ||
 
       intent ===
-        "check_status"
+        "check_status" ||
+
+      intent ===
+        "find_route"
     );
 
   }
@@ -1108,14 +1471,14 @@ export class P2Orchestrator {
       typeof createAIContext
     >,
 
-    response: AIResponse
+    response: AIResponse,
   ): P2OrchestratorResult {
 
     const guardrailContext = {
 
       p1ResultAvailable:
         Boolean(
-          context.p1_state.simulation
+          context.p1_state.simulation,
         ),
 
       p1ValidationPassed:
@@ -1129,36 +1492,23 @@ export class P2Orchestrator {
 
       knownFacts:
         this.collectKnownFacts(
-          context
+          context,
         ),
 
       missingInformation: [],
     };
 
 
-    /*
-     * Your guardrail function expects:
-     *
-     * validateAIResponse(
-     *   responseText,
-     *   aiResponse,
-     *   guardrailContext
-     * )
-     *
-     * Therefore we provide all three.
-     */
-
     const responseText =
       formatOrganizerResponse(
-        response
+        response,
       );
 
 
     const validation =
       validateAIResponse(
         responseText,
-    
-        guardrailContext
+        guardrailContext,
       );
 
 
@@ -1175,7 +1525,7 @@ export class P2Orchestrator {
 
         error:
           validation.errors.join(
-            "; "
+            "; ",
           ),
 
         context,
@@ -1206,7 +1556,7 @@ export class P2Orchestrator {
   private collectKnownFacts(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
   ): string[] {
 
     const facts: string[] = [];
@@ -1215,7 +1565,7 @@ export class P2Orchestrator {
     if (context.organizer_request) {
 
       facts.push(
-        `Organizer request: ${context.organizer_request}`
+        `Organizer request: ${context.organizer_request}`,
       );
 
     }
@@ -1224,7 +1574,7 @@ export class P2Orchestrator {
     if (context.intent) {
 
       facts.push(
-        `Detected intent: ${context.intent}`
+        `Detected intent: ${context.intent}`,
       );
 
     }
@@ -1235,7 +1585,40 @@ export class P2Orchestrator {
     ) {
 
       facts.push(
-        `Strategy ID: ${context.entities.strategy_id}`
+        `Strategy ID: ${context.entities.strategy_id}`,
+      );
+
+    }
+
+
+    if (
+      context.route?.source
+    ) {
+
+      facts.push(
+        `Route source: ${context.route.source}`,
+      );
+
+    }
+
+
+    if (
+      context.route?.destination
+    ) {
+
+      facts.push(
+        `Route destination: ${context.route.destination}`,
+      );
+
+    }
+
+
+    if (
+      context.route?.objective
+    ) {
+
+      facts.push(
+        `Route objective: ${context.route.objective}`,
       );
 
     }
@@ -1246,7 +1629,26 @@ export class P2Orchestrator {
     ) {
 
       facts.push(
-        "A P1 simulation result is available."
+        "A P1 simulation result is available.",
+      );
+
+    }
+
+
+    const routeToolResult =
+      context.tool_results?.find(
+        (tool) =>
+          tool.tool_name ===
+          "p2_route_intelligence",
+      );
+
+
+    if (
+      routeToolResult?.success
+    ) {
+
+      facts.push(
+        "P2 route intelligence produced a selected route using P1 state.",
       );
 
     }
@@ -1262,13 +1664,13 @@ export class P2Orchestrator {
   ======================================================= */
 
   private safeDetectIntent(
-    request: string
+    request: string,
   ): string {
 
     try {
 
       return detectIntent(
-        request
+        request,
       ).intent;
 
     } catch {
@@ -1288,3 +1690,48 @@ export class P2Orchestrator {
 
 export const p2Orchestrator =
   new P2Orchestrator();
+
+
+/* =========================================================
+   TEST
+========================================================= */
+
+export async function testP2StrategySelection() {
+
+  const result =
+    await p2Orchestrator.process({
+      organizer_request:
+        "North Gate is heavily congested. What strategies can we use?",
+
+      event_data: {
+        event_id: "EVT-001",
+        event_name: "Football Stadium Event",
+        location: "Main Stadium",
+      },
+
+      constraints: {
+        safe_capacity: 50000,
+        restricted_zones: [],
+        emergency_routes: [
+          "R-001",
+          "R-002",
+        ],
+        mandatory_approval: true,
+      },
+    });
+
+
+  console.log(
+    "===== P2 STRATEGY TEST =====",
+  );
+
+  console.log(
+    JSON.stringify(
+      result,
+      null,
+      2,
+    ),
+  );
+
+  return result;
+}
