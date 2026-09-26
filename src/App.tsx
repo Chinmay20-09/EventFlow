@@ -1,35 +1,5 @@
 import { useEffect, useState } from "react"
 
-const stats = [
-  {
-    label: "Crowd Level",
-    value: "78%",
-    status: "High",
-    icon: "👥",
-  },
-  {
-    label: "Active Alerts",
-    value: "03",
-    status: "Attention",
-    icon: "⚠️",
-  },
-  {
-    label: "Network Capacity",
-    value: "64%",
-    status: "Stable",
-    icon: "🚌",
-  },
-  {
-    label: "Risk Level",
-    value: "Medium",
-    status: "Monitoring",
-    icon: "🛡️",
-  },
-]
-
-
-
-
 function App() {
   const [activePage, setActivePage] = useState("Overview")
   const [sandboxOpen, setSandboxOpen] = useState(false)
