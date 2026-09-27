@@ -38,3 +38,4 @@ __pycache__/
 .dart_tool/
 build/
 pubspec.lock
+e2e-artifacts/

@@ -460,6 +460,14 @@ Transit: ${transitCapacity}%
     Open Sandbox
   </button>
 
+  {/* Custom Input feature: opens the modal that POSTs to P3, then GETs the
+      stored record back and lifts it into the dashboard state. */}
+  <CustomInputDialog
+    themeClasses={themeClasses}
+    isDark={isDark}
+    onStored={setStoredCustomInput}
+  />
+
   <div className={themeClasses("relative")}>
     <button className={themeClasses("p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xl")}>
       🔔
@@ -1269,7 +1277,10 @@ Transit: ${transitCapacity}%
 
         </div>
 
-          </>
+        {/* Custom Input feature: the record stored via P3 and re-fetched from
+            the backend (PostgreSQL is the source of truth). */}
+        <StoredCustomInputCard themeClasses={themeClasses} record={storedCustomInput} />
+      </>
         )}
 
         {/* ==================== WEATHER DIGITAL TWIN (midnight task) ==================== */}
