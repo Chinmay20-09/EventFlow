@@ -132,11 +132,12 @@ export const SANDBOX_SCENARIOS: SandboxScenario[] = [
     scenario_id: "SB-006",
     name: "Route Bottleneck",
     description:
-      "ROUTE_A is congested and an alternative route is available.",
+      "ROUTE_A is congested and ROUTE_B is available as an alternative route.",
     trigger: {
       condition: "bottleneck_detected",
     },
     entities: {
+      source: "ROUTE_A",
       route: "ROUTE_B",
     },
   },
@@ -176,7 +177,7 @@ export const SANDBOX_SCENARIOS: SandboxScenario[] = [
  * source: "source_gate"
  * target: "target_gate"
  *
- * The sandbox replaces those placeholders with the
+ * The sandbox replaces those placeholders with
  * scenario-specific entities.
  */
 function resolveAction(
@@ -225,7 +226,10 @@ function isStrategyApplicable(
   strategy: MitigationStrategy,
   scenario: SandboxScenario,
 ): boolean {
-  if (strategy.trigger.condition !== scenario.trigger.condition) {
+  if (
+    strategy.trigger.condition !==
+    scenario.trigger.condition
+  ) {
     return false;
   }
 
@@ -272,7 +276,10 @@ export function runStrategySandbox(
   strategy: MitigationStrategy,
   scenario: SandboxScenario,
 ): StrategySandboxResult {
-  const matched = isStrategyApplicable(strategy, scenario);
+  const matched = isStrategyApplicable(
+    strategy,
+    scenario,
+  );
 
   const action = strategy.actions[0];
 
@@ -282,7 +289,10 @@ export function runStrategySandbox(
     );
   }
 
-  const resolvedAction = resolveAction(action, scenario);
+  const resolvedAction = resolveAction(
+    action,
+    scenario,
+  );
 
   return {
     scenario_id: scenario.scenario_id,
@@ -305,11 +315,13 @@ export function runAllStrategySandboxTests(): StrategySandboxResult[] {
   return SANDBOX_SCENARIOS.map((scenario) => {
     const matchingStrategies = STRATEGY_CATALOG.filter(
       (strategy) =>
-        strategy.trigger.condition === scenario.trigger.condition,
+        strategy.trigger.condition ===
+        scenario.trigger.condition,
     );
 
-    const strategy = matchingStrategies.find((candidate) =>
-      isStrategyApplicable(candidate, scenario),
+    const strategy = matchingStrategies.find(
+      (candidate) =>
+        isStrategyApplicable(candidate, scenario),
     );
 
     if (!strategy) {
@@ -318,7 +330,10 @@ export function runAllStrategySandboxTests(): StrategySandboxResult[] {
       );
     }
 
-    return runStrategySandbox(strategy, scenario);
+    return runStrategySandbox(
+      strategy,
+      scenario,
+    );
   });
 }
 
@@ -328,38 +343,79 @@ export function runAllStrategySandboxTests(): StrategySandboxResult[] {
 export function printStrategySandboxResults(): void {
   const results = runAllStrategySandboxTests();
 
-  console.log("\n==============================================");
-  console.log("EVENTFLOW P2 STRATEGY SANDBOX");
-  console.log("==============================================");
+  console.log(
+    "\n==============================================",
+  );
+  console.log(
+    "EVENTFLOW P2 STRATEGY SANDBOX",
+  );
+  console.log(
+    "==============================================",
+  );
 
   for (const result of results) {
-    console.log(`\n${result.strategy_id} — ${result.strategy_name}`);
-    console.log("----------------------------------------------");
+    console.log(
+      `\n${result.strategy_id} — ${result.strategy_name}`,
+    );
 
-    console.log(`Scenario: ${result.scenario_id}`);
-    console.log(`Matched: ${result.matched ? "YES" : "NO"}`);
+    console.log(
+      "----------------------------------------------",
+    );
+
+    console.log(
+      `Scenario: ${result.scenario_id}`,
+    );
+
+    console.log(
+      `Matched: ${
+        result.matched ? "YES" : "NO"
+      }`,
+    );
 
     console.log("\nAction:");
-    console.log(JSON.stringify(result.action, null, 2));
+
+    console.log(
+      JSON.stringify(
+        result.action,
+        null,
+        2,
+      ),
+    );
 
     console.log("\nParameters:");
-    console.log(JSON.stringify(result.parameters, null, 2));
+
+    console.log(
+      JSON.stringify(
+        result.parameters,
+        null,
+        2,
+      ),
+    );
 
     console.log("\nExpected effects:");
+
     for (const effect of result.expected_effects) {
       console.log(`- ${effect}`);
     }
 
     console.log(
       `\nApproval required: ${
-        result.approval_required ? "YES" : "NO"
+        result.approval_required
+          ? "YES"
+          : "NO"
       }`,
     );
   }
 
-  console.log("\n==============================================");
-  console.log("P2 STRATEGY SANDBOX COMPLETE");
-  console.log("==============================================");
-}
+  console.log(
+    "\n==============================================",
+  );
 
-// Run when this file is executed directly.
+  console.log(
+    "P2 STRATEGY SANDBOX COMPLETE",
+  );
+
+  console.log(
+    "==============================================",
+  );
+}
