@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "test": "vitest run",
-    "test:crowd": "tsx scripts/test_Crowd.ts",
-    "preview": "vite preview"
-  },
+  "dev": "vite",
+  "build": "tsc -b && vite build",
+  "lint": "oxlint",
+  "test": "vitest run",
+  "test:crowd": "tsx scripts/test_Crowd.ts",
+  "test:strategy-sandbox": "tsx --tsconfig tsconfig.test.json src/test_strategy_sandbox.ts",
+  "preview": "vite preview"
+},
   "dependencies": {
     "@google/genai": "^2.24.0",
     "dotenv": "^18.0.4",
