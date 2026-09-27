@@ -613,3 +613,113 @@ def test_p4_dashboard_reflects_ingested_p1_values(client):
     dashboard = client.get(f"/api/events/{event_id}/dashboard").json()["data"]
     assert dashboard["stats"]["live_visitors"] == 2500
     assert dashboard["stats"]["crowd_level_pct"] == 50.0
+
+
+# --- contract details (task testing requirements 5, 10, 11, 15) ------------
+
+
+def test_cross_event_node_is_rejected(client):
+    """Requirement 5: a P1 id mapped only in ANOTHER event must not resolve."""
+    event_id = create_event(client)
+    other_event = create_event(client, name="Other Event")
+    other_node_id = _create_node_with_external(client, other_event, "OTHER_HALL")
+
+    # "OTHER_HALL" exists, but only for the other event -> 422, nothing stored.
+    response = client.post(
+        "/api/internal/crowd-state",
+        json=_snapshot(event_id, [_metric("OTHER_HALL", current_occupancy=10)]),
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    # The other event's row was not touched either (no cross-event write).
+    assert client.get(f"/api/nodes/{other_node_id}/crowd").status_code == 404
+
+
+def test_strategy_id_is_never_mapped_to_strategy_set_id(client):
+    """Requirement 11: result.strategy_id stays P1's opaque strategy string."""
+    event_id = create_event(client)
+    source = create_node(client, event_id, name="Source")
+    dest = create_node(client, event_id, name="Dest")
+    strategy_set_id = create_strategy_set(client, event_id, source, dest)
+
+    result = _sim_result(
+        result_id="p1-sim-strat",
+        # A P1 strategy id that collides with nothing in P3 and is NOT an int.
+        strategy_id="P1_STRATEGY_OPQ_9",
+    )
+    response = client.post(
+        "/api/internal/simulations",
+        json={"strategy_set_id": strategy_set_id, "result": result},
+    )
+    assert response.status_code == 201, response.text
+
+    fetched = client.get(f"/api/strategy-sets/{strategy_set_id}/simulation").json()["data"]
+    stored = fetched["p1_result"]
+    # strategy_id is preserved verbatim as P1 data, never used as the P3 link.
+    assert stored["strategy_id"] == "P1_STRATEGY_OPQ_9"
+    # The P3 link is the envelope's strategy_set_id, and only that.
+    assert fetched["strategy_set_id"] == strategy_set_id
+    assert strategy_set_id != "P1_STRATEGY_OPQ_9"
+
+
+def test_timeline_is_preserved_verbatim(client):
+    """Requirement 15: nested timeline data survives storage unchanged."""
+    event_id = create_event(client)
+    source = create_node(client, event_id, name="Source")
+    dest = create_node(client, event_id, name="Dest")
+    strategy_set_id = create_strategy_set(client, event_id, source, dest)
+
+    result = _sim_result(result_id="p1-sim-timeline")
+    response = client.post(
+        "/api/internal/simulations",
+        json={"strategy_set_id": strategy_set_id, "result": result},
+    )
+    assert response.status_code == 201, response.text
+
+    fetched = client.get(f"/api/strategy-sets/{strategy_set_id}/simulation").json()["data"]
+    assert fetched["p1_result"]["timeline"] == result["timeline"]
+    step = fetched["p1_result"]["timeline"][0]
+    assert step["time_seconds"] == 60
+    assert step["node_metrics"][0]["id"] == "HALL"
+    assert step["edge_metrics"][0]["density_state"] == "MEDIUM"
+    assert step["crowd"][0]["assigned_route"] == ["HALL_GATE"]
+
+
+def test_older_result_redelivery_is_idempotent_across_attempts(client):
+    """Requirement 9 + transport retries: re-delivering attempt 1's result id
+    after attempt 2 replaced the latest pointer must stay idempotent — no
+    third row, no consumed attempt."""
+    event_id = create_event(client)
+    source = create_node(client, event_id, name="Source")
+    dest = create_node(client, event_id, name="Dest")
+    strategy_set_id = create_strategy_set(client, event_id, source, dest)
+
+    first = client.post(
+        "/api/internal/simulations",
+        json={"strategy_set_id": strategy_set_id, "result": _sim_result(result_id="p1-sim-a1")},
+    )
+    assert first.status_code == 201
+    first_row_id = first.json()["data"]["simulation_result_id"]
+
+    second = client.post(
+        "/api/internal/simulations",
+        json={"strategy_set_id": strategy_set_id, "result": _sim_result(result_id="p1-sim-a2")},
+    )
+    assert second.status_code == 201
+    second_row_id = second.json()["data"]["simulation_result_id"]
+    assert second_row_id != first_row_id
+
+    # Late redelivery of the FIRST attempt (e.g. a queued transport retry).
+    replay = client.post(
+        "/api/internal/simulations",
+        json={"strategy_set_id": strategy_set_id, "result": _sim_result(result_id="p1-sim-a1")},
+    )
+    assert replay.status_code == 201
+    assert replay.json()["data"]["duplicate"] is True
+    assert replay.json()["data"]["simulation_result_id"] == first_row_id
+
+    # No third row was created and no attempt was consumed; the set's
+    # latest-result pointer stays on the newest attempt (EV-015 §7).
+    strategy_set = client.get(f"/api/strategy-sets/{strategy_set_id}").json()["data"]
+    assert strategy_set["attempt_count"] == 2
+    assert strategy_set["simulation_result_id"] == second_row_id

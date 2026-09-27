@@ -56,7 +56,7 @@ def test_strategy_set_without_metadata_has_nulls(client):
     assert created["risk_level"] is None
 
 
-def test_simulation_result_contains_marked_mock_predicted_metrics(client):
+def test_simulation_result_stores_real_p1_payload_verbatim(client):
     event_id = create_event(client)
     north = create_node(client, event_id, name="North Gate")
     east = create_node(client, event_id, name="East Zone")
@@ -67,15 +67,17 @@ def test_simulation_result_contains_marked_mock_predicted_metrics(client):
     )
 
     result = client.get(f"/api/strategy-sets/{strategy_set_id}/simulation").json()["data"]
-    metrics = result["predicted_metrics"]
-    assert metrics is not None
-    # Clearly marked as mock P1 output until the real engine confirms the shape.
-    assert metrics["source"] == "[MOCK P1]"
-    assert "crowd_level_pct" in metrics
-    assert "network_capacity_pct" in metrics
-    assert "risk_level" in metrics
-    # The headline result summary carries the mock marker too.
-    assert "[MOCK P1]" in result["result_summary"]
+    # Real P1 engine (P1_ENGINE_MODE=real default): the full serialized P1
+    # result is stored verbatim in p1_result — never a mock placeholder.
+    assert "[MOCK P1]" not in result["result_summary"]
+    p1_result = result["p1_result"]
+    assert p1_result is not None
+    assert p1_result["status"] == "COMPLETED"
+    assert p1_result["id"] == f"SIMULATION_RESULT_STRATEGY_SET_{strategy_set_id}_ATTEMPT_1"
+    assert p1_result["scenario_id"] == f"STRATEGY_SET_{strategy_set_id}_ATTEMPT_1"
+    assert "metrics" in p1_result and "timeline" in p1_result
+    # The engine's own metrics are simulation data, not P3 predictions.
+    assert result["predicted_metrics"] is None
 
 
 def test_attempt_count_exposed_to_frontend(client):

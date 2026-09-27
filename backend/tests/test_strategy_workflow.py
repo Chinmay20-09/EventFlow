@@ -126,9 +126,10 @@ def test_simulation_flow_and_result_retrieval(client, db):
     assert result.status_code == 200
     result_data = result.json()["data"]
     assert result_data["strategy_set_id"] == strategy_set_id
-    assert result_data["status"] == "SUCCESS"
-    # Mock adapter output must be clearly marked (task: adapter design).
-    assert "[MOCK P1]" in result_data["result_summary"]
+    # Real P1 engine (P1_ENGINE_MODE=real default): status is P1's
+    # SimulationStatus verbatim — the engine's COMPLETED, not a mock value.
+    assert result_data["status"] == "COMPLETED"
+    assert "[MOCK P1]" not in result_data["result_summary"]
     assert "conflicts" in result_data
 
 

@@ -497,3 +497,74 @@ lock. New dependencies: `bcrypt`, `pyjwt`, `email-validator`
 **Remaining auth issues (out of scope here):** refresh tokens / logout
 (stateless JWTs cannot be revoked server-side), rate limiting on
 `/api/auth/*`, password reset, and wiring the P4 login screen.
+
+## 12. Real P3 → P1 simulation input (integration requirement C, 2026-09-27)
+
+The mock adapter is no longer the default. `POST /api/strategy-sets/{id}/simulate`
+now runs the REAL deterministic TypeScript engine through a child-process
+boundary; no P1 calculation is duplicated in Python.
+
+**Pieces (additive; nothing else was rewritten):**
+
+- `app/services/p1_input.py` — builds the P1 `SandboxInput` (JSON dict) from
+  stored event data only: nodes (`external_id` verbatim, else the P3 integer
+  id as a string), edges (`distance`/`travel_time` → `distance`/`baselineTime`;
+  edges missing both are skipped — P1 rejects non-finite traversal values),
+  crowd (one group per node with a non-zero `crowd_state.current_crowd`,
+  observed data only — nothing invented), ACTIVE disruptions (rows without a
+  parseable `start_time` are skipped — P1 requires `startTime`). P4 node
+  types map to P1 with documented fallbacks: VENUE→ZONE, JUNCTION→TRANSIT
+  (GATE is valid in both; P1 validates entries against ENTRANCE/GATE and
+  exits against EXIT/GATE).
+- `integration/runner/p1Runner.ts` — stdio runner, sibling of
+  `scripts/pushToP3.ts`: SandboxInput on stdin →
+  `serializeSimulationResult(runSandbox(input))` on stdout; engine-rejected
+  input exits non-zero with the diagnostic on stderr. FastAPI depends on no
+  TypeScript internal — the boundary is JSON over stdio
+  (`node node_modules/tsx/dist/cli.mjs integration/runner/p1Runner.ts`).
+- `app/services/adapters/p1_engine.py` — `RealP1EngineAdapter` (new default,
+  `P1_ENGINE_MODE=real`): builds the input, spawns the runner (fixed argv,
+  no shell, 120 s timeout), stores the serialized result VERBATIM in
+  `simulation_results.p1_result` (via `workflow.request_simulation`), P1
+  status verbatim. Graceful degradation: if Node/tsx is not available the
+  adapter falls back to the clearly-marked `[MOCK P1]` adapter (same
+  convention as the OSRM/Groq integrations); an engine-reported failure is
+  never replaced by a mock — it surfaces as `SIMULATION_FAILURE` with P1's
+  diagnostics. `P1_ENGINE_MODE=mock` forces the placeholder (deterministic
+  unit-test mode).
+- Scenario identity: the scenario id is
+  `STRATEGY_SET_<id>_ATTEMPT_<n>` (n = attempt number), so the deterministic
+  P1 result id `SIMULATION_RESULT_<scenario_id>` is distinct per attempt and
+  replay-stable. `result.strategy_id` stays P1's identifier (null here) and
+  is never mapped to `strategy_set_id`.
+
+**Startup migration additions (§ idempotent, additive only):**
+`nodes.external_id VARCHAR(80)`, `crowd_state.p1_metric JSON`,
+`simulation_results.p1_result JSON`, and the UNIQUE index
+`uq_nodes_event_external (event_id, external_id)` when both columns exist —
+so pre-P1 PostgreSQL databases gain the ingestion columns without a reset
+(create_all already covers fresh databases).
+
+**Real E2E tests (`backend/tests/test_p1_e2e_real.py`)** — no mocks in the
+chain: uvicorn on an ephemeral port (isolated temp SQLite DB, `P3_API_KEY`
+enabled) + the real engine/serializer/transport driven through
+`integration/runner/e2eDriver.mts`:
+
+1. `test_real_p1_simulation_e2e`: register/login → event + nodes
+   (`external_id` ENTRY/HALL/EXIT) + edges + strategy set through the normal
+   API → real `runSandbox` → real `serializeSimulationResult` → real
+   `P3Client.sendSimulationResult` (HTTP) → `POST /api/internal/simulations`
+   → read back via API AND the SQLite file: id/scenario_id/strategy_id/
+   metrics/final_state/timeline/warnings verified byte-for-byte; workflow
+   PROPOSED→SIMULATED, no auto-approval.
+2. `test_real_crowd_state_e2e`: real `capacityMetric` over observed
+   occupancies → real `P3Client.sendCrowdStateUpdate` →
+   `POST /api/internal/crowd-state` → read back per node: the full 17-field
+   metric matches P1 exactly (nulls stay null, zero stays zero,
+   `density_state` is P1's own classification).
+
+Added contract tests (`tests/test_p1_ingestion.py`): cross-event node
+rejected, `strategy_id` never mapped to `strategy_set_id`, timeline
+preserved verbatim, and late redelivery of an older result id is idempotent
+across attempts (no extra row, no consumed attempt; the set's latest-result
+pointer stays on the newest attempt per EV-015 §7).
