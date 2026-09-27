@@ -6,6 +6,19 @@ Nothing changes in the live environment without an operator approving it.
 
 ---
 
+## Running locally
+
+From the repository root, run:
+
+```bash
+npm install
+npm run dev
+```
+
+This starts the Vite frontend at <http://localhost:5173> and the FastAPI backend at <http://localhost:8000>. Frontend requests to `/api` are proxied to the backend. The login screen checks backend health and authenticates through the backend API.
+
+The backend requires `backend/.venv` with `backend/requirements.txt` installed and a configured `backend/.env` (copy `backend/.env.example` and set `DATABASE_URL` to a reachable PostgreSQL database). Set `API_PORT` before `npm run dev` to use a different backend port; the Vite proxy follows that setting.
+
 ## The core workflow
 
 ```
@@ -44,42 +57,13 @@ docs/                     Domain specifications (the architecture)
   Prediction.md            EV-009  Prediction
   EV-010_Optimization.md   EV-010  Optimization
   EV-011_Simulation.md      EV-011  Simulation
-UI/
-  index.html               Self-contained static prototype (Command Center)
-  app.js                   Shared demo state for the multi-page UI version
+frontend/src/              Vite/React command center
+backend/app/               FastAPI API and persistence layer
 team.docs                  Document tracker for the full EV-001 … EV-045 set
 README.md                  This file
 ```
 
 ---
-
-## Running the prototype
-
-The UI is a plain static prototype. There is no build step, no package manager and no backend.
-
-**Simplest:** open `UI/index.html` in a browser.
-
-**Or serve it locally** (recommended, so relative paths behave the same as in a deployment):
-
-```bash
-cd UI
-python -m http.server 8000
-```
-
-Then open <http://localhost:8000>. Any static file server works the same way.
-
-The prototype has four pages reachable from the sidebar:
-
-| Page | Purpose |
-| --- | --- |
-| **Live Event Map** | Current venue state, crowd conditions and active disruptions |
-| **AI Sandbox** | Run a candidate strategy through a simulated scenario |
-| **Response Updates** | Operational status and applied changes |
-| **Reports** | Incident response summary |
-
-The sandbox follows the intended production flow: pick a strategy → simulate it → review the simulated outcome → approve or reject. Approving is a UI action only; the prototype does not write to any live system.
-
-> `UI/index.html` is fully self-contained and works on its own. `UI/app.js` holds the shared demo state for a multi-page version of the UI (`live-map.html`, `ai-sandbox.html`, `updates.html`, `reports.html`) that has not been built yet, so it is not currently loaded by `index.html`.
 
 ---
 
@@ -119,5 +103,5 @@ A few terms that mean something specific in this project:
 ## Current status
 
 - Six domain specifications (EV-006 … EV-011) are complete and reviewed for cross-document consistency.
-- The UI prototype is clickable and demonstrates the strategy → simulate → approve flow.
-- Not yet built: backend, database, API, traveler app, and the remaining documents listed in `team.docs`.
+- The root Vite/React command center and FastAPI backend are available through `npm run dev`.
+- The backend requires a reachable PostgreSQL database configured in `backend/.env`; the traveler app and remaining documents in `team.docs` are not complete.

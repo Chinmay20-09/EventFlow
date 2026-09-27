@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 import DigitalTwinPanel from "./components/DigitalTwinPanel"
+import { getApiHealth, login as loginToApi } from "./api"
+import type { ApiHealth } from "./api"
 
 function App() {
   const [isDark, setIsDark] = useState(true)
@@ -20,7 +22,36 @@ function App() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loginError, setLoginError] = useState("")
+  const [loginPending, setLoginPending] = useState(false)
+  const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null)
+  const [apiError, setApiError] = useState("")
   const [selectedNode, setSelectedNode] = useState("A")
+
+  useEffect(() => {
+    let active = true
+
+    const checkApi = async () => {
+      try {
+        const health = await getApiHealth()
+        if (active) {
+          setApiHealth(health)
+          setApiError("")
+        }
+      } catch (error) {
+        if (active) {
+          setApiHealth(null)
+          setApiError(error instanceof Error ? error.message : "EventFlow API is unavailable.")
+        }
+      }
+    }
+
+    void checkApi()
+    const interval = setInterval(() => void checkApi(), 15000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [])
 
   const themeClasses = (classes: string) => {
     const addThemeTransition = (value: string) =>
@@ -204,15 +235,23 @@ const alerts =
         },
       ]
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
   if (!email.trim() || !password.trim()) {
     setLoginError("Please enter email and password")
     return
   }
 
-  setLoginError("")
-  setIsLoggedIn(true)
-}
+    setLoginPending(true)
+    setLoginError("")
+    try {
+      await loginToApi(email.trim(), password)
+      setIsLoggedIn(true)
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Unable to sign in.")
+    } finally {
+      setLoginPending(false)
+    }
+  }
 
 const handleShareMap = async () => {
   const mapData = `
@@ -254,6 +293,10 @@ Transit: ${transitCapacity}%
           AI Event Command Center
         </p>
 
+        <p className={`text-center text-sm mt-4 ${apiHealth ? "text-green-400" : "text-amber-400"}`}>
+          {apiHealth ? "Backend connected" : apiError || "Connecting to backend…"}
+        </p>
+
         <div className={themeClasses("mt-8 space-y-4")}>
           <div>
             <label className={themeClasses("text-sm text-slate-300")}>Email</label>
@@ -283,9 +326,10 @@ Transit: ${transitCapacity}%
 
           <button
             onClick={handleLogin}
-            className={themeClasses("w-full bg-blue-600 hover:bg-blue-500 rounded-lg py-3 font-semibold text-white")}
+            disabled={loginPending}
+            className={themeClasses("w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 rounded-lg py-3 font-semibold text-white")}
           >
-            Login
+            {loginPending ? "Signing in…" : "Login"}
           </button>
         </div>
       </div>
@@ -355,9 +399,9 @@ Transit: ${transitCapacity}%
           </p>
 
           <div className={themeClasses("flex items-center gap-2 mt-3")}>
-            <div className={themeClasses("w-2.5 h-2.5 rounded-full bg-green-400")} />
+            <div className={`w-2.5 h-2.5 rounded-full ${apiHealth ? "bg-green-400" : "bg-amber-400"}`} />
             <span className={themeClasses("text-sm text-slate-300")}>
-              All systems operational
+              {apiHealth ? "Backend connected" : "Backend unavailable"}
             </span>
           </div>
         </div>
