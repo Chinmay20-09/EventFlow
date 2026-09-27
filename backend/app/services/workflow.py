@@ -102,10 +102,20 @@ def request_simulation(db: Session, strategy_set_id: int) -> tuple[StrategySet, 
 
     result = SimulationResult(
         strategy_set_id=strategy_set.strategy_set_id,
+        # P1's status verbatim (real run: SimulationStatus; mock: SUCCESS).
         status=outcome.status,
         result_summary=outcome.result_summary,
         conflicts=outcome.conflicts,
-        predicted_metrics=outcome.predicted_metrics,
+        # A real P1 outcome carries the full serialized result — stored
+        # verbatim in p1_result (the same column the ingestion endpoint
+        # uses), never recomputed. The mock outcome has no P1 result id and
+        # keeps the legacy predicted_metrics shape.
+        predicted_metrics=(
+            outcome.predicted_metrics if outcome.p1_result_id is None else None
+        ),
+        p1_result=(
+            outcome.predicted_metrics if outcome.p1_result_id is not None else None
+        ),
     )
     db.add(result)
     db.flush()  # assign simulation_result_id
@@ -131,8 +141,10 @@ def record_external_simulation(
 
     - Same state machine: PROPOSED/FAILED/SIMULATED → SIMULATING → SIMULATED,
       MAX_SIMULATION_ATTEMPTS enforced, no auto-approval, no execution.
-    - Idempotent by P1 result id: re-delivering the same serialized result
-      returns the stored row without consuming another attempt.
+    - Idempotent by P1 result id across all stored results of the strategy
+      set: re-delivering an already-stored id (even an older one superseded
+      by a later attempt) returns the stored row without consuming another
+      attempt.
     - `status` is P1's `SimulationStatus` verbatim; `predicted_metrics` is
       left untouched (simulation metrics are not predictions).
 
@@ -144,14 +156,22 @@ def record_external_simulation(
 
     # Idempotency: the P1 result id is deterministic for identical input
     # (engine/src/sandbox.ts), so it is the duplicate-detection key.
+    # Checked across EVERY stored result of this strategy set — the latest
+    # pointer alone is not enough, because a redelivery can arrive after a
+    # newer attempt already replaced `simulation_result_id` (transport
+    # retries; MAX_SIMULATION_ATTEMPTS=2 allows two distinct results).
     if strategy_set.simulation_result_id is not None:
-        existing = db.get(SimulationResult, strategy_set.simulation_result_id)
-        if (
-            existing is not None
-            and existing.p1_result is not None
-            and existing.p1_result.get("id") == p1_result_id
-        ):
-            return strategy_set, existing, True
+        stored_results = db.execute(
+            select(SimulationResult).where(
+                SimulationResult.strategy_set_id == strategy_set.strategy_set_id
+            )
+        ).scalars().all()
+        for existing in stored_results:
+            if existing.p1_result is not None and existing.p1_result.get("id") == p1_result_id:
+                # The stored row is returned (duplicate=True) and no attempt
+                # is consumed; the set's latest-result pointer stays on the
+                # newest attempt (EV-015 §7) — a replay never rewrites state.
+                return strategy_set, existing, True
 
     if strategy_set.attempt_count >= settings.max_simulation_attempts:
         raise AppError(

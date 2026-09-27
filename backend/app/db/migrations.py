@@ -46,6 +46,18 @@ _REQUIRED_COLUMNS = {
     },
     "nodes": {
         "visitors_expected": "ALTER TABLE nodes ADD COLUMN visitors_expected INTEGER NULL",
+        # P1 → P3 ingestion (engine/src/serialization.ts): verbatim P1 string id
+        # per node, unique within the event (uq_nodes_event_external). Nullable —
+        # nodes created before the P1 integration keep working without a mapping.
+        "external_id": "ALTER TABLE nodes ADD COLUMN external_id VARCHAR(80)",
+    },
+    # Verbatim P1 CapacityMetric snapshot per node (crowd_state.p1_metric).
+    "crowd_state": {
+        "p1_metric": "ALTER TABLE crowd_state ADD COLUMN p1_metric JSON",
+    },
+    # Verbatim P1 serializeSimulationResult payload (simulation_results.p1_result).
+    "simulation_results": {
+        "p1_result": "ALTER TABLE simulation_results ADD COLUMN p1_result JSON",
     },
 }
 
@@ -55,9 +67,25 @@ _EMAIL_INDEX = "ix_users_email"
 
 
 def run_startup_migrations(engine: Engine) -> None:
-    """Add missing columns (auth + P4 map) + the unique email index if absent."""
+    """Add missing columns (auth + P4 map + P1 ingestion) + unique email index."""
     inspector = inspect(engine)
     with engine.connect() as connection:
+        # uq_nodes_event_external — unique (event_id, external_id) so a P1
+        # string id resolves to exactly one node per event. Added only when
+        # both columns exist AND the index is absent; duplicate (event_id,
+        # external_id) pairs make the CREATE fail loudly (rows are never
+        # modified or deleted).
+        if inspector.has_table("nodes"):
+            node_columns = {col["name"] for col in inspector.get_columns("nodes")}
+            if {"event_id", "external_id"}.issubset(node_columns) and not any(
+                ix["name"] == "uq_nodes_event_external" for ix in inspector.get_indexes("nodes")
+            ):
+                connection.execute(
+                    text("CREATE UNIQUE INDEX uq_nodes_event_external ON nodes (event_id, external_id)")
+                )
+                connection.commit()
+                logger.info("Startup migration: created unique index uq_nodes_event_external")
+
         for table, columns in _REQUIRED_COLUMNS.items():
             if not inspector.has_table(table):
                 continue  # create_all just created it with all columns.

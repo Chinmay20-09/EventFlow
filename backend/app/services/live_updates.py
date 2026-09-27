@@ -37,7 +37,7 @@ from app.services.adapters.p2_intel import AlertTextFacts, get_p2_intel
 from app.services.congestion import compute_congestion
 from app.services.event_settings import get_effective_settings
 from app.services.pathfinding import recompute_routes
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 logger = logging.getLogger("eventflow.p3")
 

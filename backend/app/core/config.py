@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # set the SAME value on both sides (P3_API_KEY in the P1 transport env).
     p3_api_key: str = ""
 
+    # P1 engine execution mode (integration requirement C). "real" runs the
+    # deterministic TypeScript engine (engine/src) through the child-process
+    # runner (integration/runner/p1Runner.ts); if the Node runtime is not
+    # available the adapter degrades to the marked mock. "mock" forces the
+    # clearly-marked placeholder (no Node required).
+    p1_engine_mode: str = "real"
+
     # User authentication (JWT bearer tokens for /api/auth and protected
     # endpoints). SECRET_KEY signs the tokens — set it from the environment
     # (or the git-ignored backend/.env in development); a deployed instance

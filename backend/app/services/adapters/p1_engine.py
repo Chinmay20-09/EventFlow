@@ -2,33 +2,65 @@
 
 P3 must NEVER calculate crowd propagation, prediction, optimization or
 simulation results (EV-003 §10, EV-016 §20). This adapter is the single
-seam where a P1-produced result enters the backend.
+seam where the real P1 engine executes (integration requirement C) and
+where P1-produced results enter the backend through
+`POST /api/internal/simulations`.
 
-Status: MOCK. The real P1 engine is not available yet, so a clearly marked
-placeholder result is returned. Replace `MockP1EngineAdapter` with a real
-client (or wire results arriving through POST /api/internal/simulations)
-without touching the workflow service.
+**Real adapter (requirement C — "replace ONLY the mock implementation").**
+`RealP1EngineAdapter` builds the `SandboxInput` from P3's stored event data
+(`services/p1_input.py`) and executes the REAL deterministic TypeScript
+engine (`engine/src`) through the existing integration architecture: a
+small runner (`integration/runner/p1Runner.ts`, sibling of
+`scripts/pushToP3.ts`) is spawned as a child process with the input on
+stdin and the serialized P1 result on stdout. FastAPI never imports any
+TypeScript internal — the boundary is JSON over stdio.
+
+`P1_ENGINE_MODE` selects the behavior:
+
+* `"real"` (default) — the real engine runs; if the runner cannot be
+  executed at all (Node/tsx missing, project root not found), the adapter
+  degrades to the clearly-marked mock so P4 keeps working (documented
+  graceful degradation, same convention as the OSRM/Groq integrations).
+* `"mock"` — forces the marked mock (deterministic, Node-free).
 """
 
+import json
 import logging
+import os
+import shutil
+import subprocess  # noqa: S404 — fixed argument vector, no shell
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from app.core.config import settings
 
 logger = logging.getLogger("eventflow.p3")
+
+# Project root = four levels above this file
+# (backend/app/services/adapters/p1_engine.py -> repo root). Used only to
+# locate the TypeScript runner; nothing is written outside the process.
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+# Simulation wall-clock guard: the deterministic engine is fast, but a
+# hung Node must never wedge the API request thread forever.
+_RUNNER_TIMEOUT_SECONDS = 120
 
 
 @dataclass
 class SimulationOutcome:
     """Structurally-valid simulation output as stored per EV-005 §13.
 
-    `predicted_metrics` is an optional structured outcome (predicted crowd
-    level, network capacity, risk) as supplied by P1. P3 stores it verbatim
-    — it never computes these values.
+    For real P1 runs, `predicted_metrics` carries the serialized P1 result
+    VERBATIM (snake_case, exactly as `serializeSimulationResult` emitted
+    it) and `p1_result_id` is the engine's result id. `status` is P1's
+    SimulationStatus verbatim — never remapped by P3.
     """
 
     status: str
     result_summary: str
     conflicts: list = field(default_factory=list)
     predicted_metrics: dict | None = None
+    p1_result_id: str | None = None
 
 
 class P1EngineAdapter:
@@ -39,10 +71,11 @@ class P1EngineAdapter:
 
 
 class MockP1EngineAdapter(P1EngineAdapter):
-    """MOCK adapter used until the real P1 engine exists.
+    """Marked placeholder outcome so P4 can be exercised without Node.
 
-    It performs no calculation of its own — it only produces a clearly marked
-    placeholder outcome so P4 can be exercised end-to-end.
+    It performs no calculation of its own — every value is a constant, and
+    the "[MOCK P1]" marker makes a mock result unmistakable wherever it
+    surfaces (P4, logs, stored rows).
     """
 
     def run_simulation(self, strategy_set_id: int, strategies: list[dict]) -> SimulationOutcome:
@@ -55,8 +88,6 @@ class MockP1EngineAdapter(P1EngineAdapter):
                 f"Strategy set {strategy_set_id} contains {len(strategies)} strategy/strategies."
             ),
             conflicts=[],
-            # Clearly marked mock metrics so P4 can be exercised end-to-end.
-            # Shape is DRAFT until confirmed by P1.
             predicted_metrics={
                 "source": "[MOCK P1]",
                 "crowd_level_pct": 68.0,
@@ -66,9 +97,139 @@ class MockP1EngineAdapter(P1EngineAdapter):
         )
 
 
-_adapter: P1EngineAdapter = MockP1EngineAdapter()
+def _node_executable() -> str | None:
+    """Resolve the Node runtime; None when Node is not installed."""
+    override = os.environ.get("P1_NODE_BIN")
+    if override:
+        return override if Path(override).exists() else None
+    return shutil.which("node")
+
+
+def _resolve_runner_argv() -> list[str] | None:
+    """Build the fixed child-process command, or None when unavailable.
+
+    Prefers the project-local tsx CLI (`node <tsx cli.mjs> <runner>`): the
+    explicit node.exe prefix works on Windows where a `.cmd` shim cannot be
+    exec'd directly, and tsx handles the TypeScript imports. No shell is
+    involved — a fixed argument vector only.
+    """
+    node = _node_executable()
+    if node is None:
+        return None
+    cli = _PROJECT_ROOT / "node_modules" / "tsx" / "dist" / "cli.mjs"
+    runner = _PROJECT_ROOT / "integration" / "runner" / "p1Runner.ts"
+    if not cli.exists() or not runner.exists():
+        return None
+    return [node, str(cli), str(runner)]
+
+
+class RealP1EngineAdapter(P1EngineAdapter):
+    """Runs the REAL deterministic P1 engine (engine/src) via the runner.
+
+    The engine itself is untouched: P3 builds only its documented input.
+    Any engine-reported failure (invalid input, engine error) surfaces as a
+    real non-COMPLETED status — results are never fabricated here.
+    """
+
+    def run_simulation(self, strategy_set_id: int, strategies: list[dict]) -> SimulationOutcome:
+        # Read-only session of our own: the adapter receives only the
+        # strategy set id (the long-standing adapter interface, unchanged),
+        # and the event's graph/crowd/disruption rows are read here. The
+        # workflow service has already committed the SIMULATING state, so
+        # the rows are visible to a fresh session.
+        from app.db.session import get_sessionmaker
+        from app.models.workflow import StrategySet
+        from app.services.p1_input import build_sandbox_input
+
+        db = get_sessionmaker()()
+        try:
+            strategy_set = db.get(StrategySet, strategy_set_id)
+            if strategy_set is None:
+                raise ValueError(f"Strategy set {strategy_set_id} not found")
+            event_id = strategy_set.event_id
+            # Attempt number makes the P1 scenario id (and therefore the
+            # deterministic result id `SIMULATION_RESULT_<scenario_id>`)
+            # distinct per attempt, while a replayed attempt stays
+            # idempotent. attempt_count is the pre-increment value here.
+            scenario_id = (
+                f"STRATEGY_SET_{strategy_set_id}_ATTEMPT_{strategy_set.attempt_count + 1}"
+            )
+            sandbox_input = build_sandbox_input(db, event_id, scenario_id=scenario_id)
+        finally:
+            db.close()
+
+        argv = _resolve_runner_argv()
+        if argv is None:
+            logger.warning(
+                "P1 runner unavailable (Node/tsx missing); degrading to the marked mock "
+                "for strategy set %s",
+                strategy_set_id,
+            )
+            return MockP1EngineAdapter().run_simulation(strategy_set_id, strategies)
+
+        try:
+            completed = subprocess.run(
+                argv,
+                input=json.dumps(sandbox_input),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=_RUNNER_TIMEOUT_SECONDS,
+                cwd=str(_PROJECT_ROOT),
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("P1 runner could not be executed: %s", exc)
+            return MockP1EngineAdapter().run_simulation(strategy_set_id, strategies)
+
+        if completed.returncode != 0:
+            # The engine ran and rejected the input, or failed: surface P1's
+            # real diagnostics as a non-COMPLETED outcome (never a mock).
+            detail = (completed.stderr or completed.stdout or "").strip()[-500:]
+            logger.warning("P1 runner failed (rc=%s): %s", completed.returncode, detail)
+            return SimulationOutcome(
+                status="SIMULATION_FAILURE",
+                result_summary=f"P1 simulation failed: {detail}"[:2000],
+                conflicts=[],
+                predicted_metrics={"error": detail},
+            )
+
+        try:
+            serialized = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            logger.warning("P1 runner produced unparseable output: %s", exc)
+            return SimulationOutcome(
+                status="SIMULATION_FAILURE",
+                result_summary="P1 runner produced an unparseable result",
+                conflicts=[],
+                predicted_metrics={"error": f"unparseable output: {exc}"},
+            )
+
+        # The serialized result is carried VERBATIM — no field is rewritten.
+        return SimulationOutcome(
+            status=serialized.get("status", "COMPLETED"),
+            result_summary=f"P1 simulation {serialized.get('id', '?')} ({serialized.get('status')})",
+            conflicts=[],
+            predicted_metrics=serialized,
+            p1_result_id=serialized.get("id"),
+        )
+
+
+_adapter: P1EngineAdapter | None = None
 
 
 def get_p1_engine() -> P1EngineAdapter:
-    """Return the P1 adapter (mock until the real engine is integrated)."""
+    """Return the P1 adapter selected by P1_ENGINE_MODE (real by default)."""
+    global _adapter
+    if _adapter is None:
+        if settings.p1_engine_mode == "real":
+            _adapter = RealP1EngineAdapter()
+        else:
+            _adapter = MockP1EngineAdapter()
     return _adapter
+
+
+def set_p1_engine(adapter: P1EngineAdapter | None) -> None:
+    """Test seam: override or reset the process-wide adapter selection."""
+    global _adapter
+    _adapter = adapter

@@ -41,7 +41,7 @@ from app.schemas.live import (
 from app.services.congestion import congestion_for_node
 from app.services.live_updates import manager, process_live_update, publish_update
 from app.services.pathfinding import shortest_route
-from app.utils import utcnow
+from app.core.utils import utcnow
 
 logger = logging.getLogger("eventflow.p3")
 
