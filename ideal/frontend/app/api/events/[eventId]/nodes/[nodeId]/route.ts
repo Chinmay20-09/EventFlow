@@ -1,0 +1,4 @@
+import {sameOrigin} from '@/lib/request';
+import {adminIdentity} from '@/lib/admin';
+import {saveNode} from '@/lib/nodes';
+export async function PATCH(req:Request,{params}:any){if(!sameOrigin(req))return Response.json({error:'Invalid request.'},{status:403});try{const who=await adminIdentity();if(!['owner','admin'].includes(who.role))return Response.json({error:'Administrator access required.'},{status:403});const {eventId,nodeId}=await params;if(!/^\d+$/.test(nodeId)||!Number.isSafeInteger(Number(nodeId)))throw Error('Invalid node ID.');return Response.json(await saveNode(eventId,await req.json(),Number(nodeId)))}catch(e){return Response.json({error:(e as Error).message},{status:400})}}
