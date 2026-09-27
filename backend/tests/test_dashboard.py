@@ -5,7 +5,7 @@ that trivial presentation ratios are correct, and that simulation data
 never appears in live aggregates.
 """
 
-from conftest import EVENT_PAYLOAD, create_event, create_node
+from conftest import EVENT_PAYLOAD, ORGANIZER_HEADERS, create_event, create_node
 
 
 def _ingest_crowd(client, event_id, node_id, value):
@@ -127,6 +127,7 @@ def test_dashboard_never_contains_simulation_data(client):
                 {"source_node_id": north, "destination_node_id": east, "action": "REDIRECT_FLOW"}
             ]
         },
+        headers=ORGANIZER_HEADERS,
     )
     strategy_set_id = set_response.json()["data"]["strategy_set_id"]
     assert client.post(f"/api/strategy-sets/{strategy_set_id}/simulate").status_code == 200

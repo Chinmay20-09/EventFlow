@@ -45,6 +45,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[4]
 # hung Node must never wedge the API request thread forever.
 _RUNNER_TIMEOUT_SECONDS = 120
 
+# Weather what-if runner (sibling of p1Runner.ts — same JSON-over-stdio
+# architecture). It converts the operator-entered rainfall into the
+# documented P1 WEATHER_EVENT disruption and runs the real engine.
+_WEATHER_RUNNER = _PROJECT_ROOT / "integration" / "runner" / "p1WeatherRunner.ts"
+
 
 @dataclass
 class SimulationOutcome:
@@ -68,6 +73,15 @@ class P1EngineAdapter:
 
     def run_simulation(self, strategy_set_id: int, strategies: list[dict]) -> SimulationOutcome:
         raise NotImplementedError
+
+    def run_weather_simulation(self, event_id: int, scenario: dict) -> SimulationOutcome:
+        """Run the P4 what-if weather scenario through P1 (task §17–§18).
+
+        Only the real engine can answer a what-if question — P3 never
+        calculates weather impact. Adapters that cannot run P1 must refuse
+        clearly rather than fabricate an outcome.
+        """
+        raise NotImplementedError("Weather scenarios require the real P1 engine")
 
 
 class MockP1EngineAdapter(P1EngineAdapter):
@@ -105,22 +119,23 @@ def _node_executable() -> str | None:
     return shutil.which("node")
 
 
-def _resolve_runner_argv() -> list[str] | None:
+def _resolve_runner_argv(runner: Path | None = None) -> list[str] | None:
     """Build the fixed child-process command, or None when unavailable.
 
     Prefers the project-local tsx CLI (`node <tsx cli.mjs> <runner>`): the
     explicit node.exe prefix works on Windows where a `.cmd` shim cannot be
     exec'd directly, and tsx handles the TypeScript imports. No shell is
-    involved — a fixed argument vector only.
+    involved — a fixed argument vector only. `runner` defaults to the
+    strategy-set simulation runner (p1Runner.ts).
     """
     node = _node_executable()
     if node is None:
         return None
     cli = _PROJECT_ROOT / "node_modules" / "tsx" / "dist" / "cli.mjs"
-    runner = _PROJECT_ROOT / "integration" / "runner" / "p1Runner.ts"
-    if not cli.exists() or not runner.exists():
+    runner_path = runner if runner is not None else _PROJECT_ROOT / "integration" / "runner" / "p1Runner.ts"
+    if not cli.exists() or not runner_path.exists():
         return None
-    return [node, str(cli), str(runner)]
+    return [node, str(cli), str(runner_path)]
 
 
 class RealP1EngineAdapter(P1EngineAdapter):
@@ -209,6 +224,90 @@ class RealP1EngineAdapter(P1EngineAdapter):
         return SimulationOutcome(
             status=serialized.get("status", "COMPLETED"),
             result_summary=f"P1 simulation {serialized.get('id', '?')} ({serialized.get('status')})",
+            conflicts=[],
+            predicted_metrics=serialized,
+            p1_result_id=serialized.get("id"),
+        )
+
+    def run_weather_simulation(self, event_id: int, scenario: dict) -> SimulationOutcome:
+        """Weather what-if through the real P1 engine (task §17–§18).
+
+        Builds the SandboxInput from the event's stored graph/crowd/disruption
+        rows (same builder the strategy-set simulation uses — the what-if
+        answer describes THIS event), hands it plus the operator's rainfall
+        to the weather runner, and returns P1's serialized result verbatim.
+        No live-state row is touched (EV-016 §13).
+        """
+        from app.db.session import get_sessionmaker
+        from app.services.p1_input import build_sandbox_input
+
+        db = get_sessionmaker()()
+        try:
+            sandbox_input = build_sandbox_input(
+                db,
+                event_id,
+                scenario_id=str(scenario["scenario_id"]),
+            )
+        finally:
+            db.close()
+
+        argv = _resolve_runner_argv(runner=_WEATHER_RUNNER)
+        if argv is None:
+            logger.warning(
+                "P1 weather runner unavailable (Node/tsx missing); "
+                "refusing to fabricate a weather scenario for event %s",
+                event_id,
+            )
+            raise RuntimeError("P1 weather runner unavailable")
+
+        try:
+            completed = subprocess.run(
+                argv,
+                input=json.dumps(
+                    {
+                        "sandbox": sandbox_input,
+                        "weather": {
+                            "rainfallMm": scenario["rainfall_mm"],
+                            "durationSeconds": scenario["duration_seconds"],
+                        },
+                    }
+                ),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=_RUNNER_TIMEOUT_SECONDS,
+                cwd=str(_PROJECT_ROOT),
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("P1 weather runner could not be executed: %s", exc)
+            raise RuntimeError("P1 weather runner could not be executed") from exc
+
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()[-500:]
+            logger.warning("P1 weather runner failed (rc=%s): %s", completed.returncode, detail)
+            return SimulationOutcome(
+                status="SIMULATION_FAILURE",
+                result_summary=f"P1 weather simulation failed: {detail}"[:2000],
+                conflicts=[],
+                predicted_metrics={"error": detail},
+            )
+
+        try:
+            serialized = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            logger.warning("P1 weather runner produced unparseable output: %s", exc)
+            return SimulationOutcome(
+                status="SIMULATION_FAILURE",
+                result_summary="P1 weather runner produced an unparseable result",
+                conflicts=[],
+                predicted_metrics={"error": f"unparseable output: {exc}"},
+            )
+
+        # The serialized result is carried VERBATIM — no field is rewritten.
+        return SimulationOutcome(
+            status=serialized.get("status", "COMPLETED"),
+            result_summary=f"P1 weather simulation {serialized.get('id', '?')} ({serialized.get('status')})",
             conflicts=[],
             predicted_metrics=serialized,
             p1_result_id=serialized.get("id"),

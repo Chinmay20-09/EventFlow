@@ -94,6 +94,27 @@ def test_simulations_endpoint_requires_key_too(auth_client):
     assert response.status_code == 401
 
 
+def test_internal_crowd_endpoint_requires_key_too(auth_client):
+    """POST /api/internal/crowd documents the P1 key — the dependency is enforced."""
+    event_id = _event(auth_client)
+    response = auth_client.post(
+        "/api/internal/crowd",
+        json={"event_id": event_id, "node_id": 1, "current_crowd": 1},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_internal_predictions_endpoint_requires_key_too(auth_client):
+    """POST /api/internal/predictions documents the P1 key — enforced like crowd-state."""
+    response = auth_client.post(
+        "/api/internal/predictions",
+        json={"node_id": 1, "predicted_value": 1, "prediction_horizon": 60},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
 def test_other_endpoints_are_unaffected_by_p1_key(auth_client):
     """The P1 service key gates only /api/internal/* — P4 routes are untouched."""
     assert auth_client.get("/api/events").status_code == 200

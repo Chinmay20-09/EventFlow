@@ -5,12 +5,13 @@ P3 validates, stores and serves them. P3 never calculates predictions
 (EV-003 §10, EV-016 §20).
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.api.routes.nodes import get_node_or_404
 from app.core.errors import AppError, ok
+from app.core.security import verify_p1_api_key
 from app.db.session import commit_or_fail
 from app.models.prediction import Prediction
 from app.schemas.prediction import PredictionIn, PredictionOut
@@ -20,7 +21,6 @@ from app.services.read_models import build_forecast
 router = APIRouter(prefix="/api", tags=["predictions"])
 
 
-@router.post("/internal/predictions", status_code=status.HTTP_201_CREATED)
 def ingest_prediction(payload: PredictionIn, db: DbSession) -> dict:
     """Store the latest prediction for a node (P1 → P3 ingestion, EV-016 §8).
 
@@ -61,6 +61,21 @@ def ingest_prediction(payload: PredictionIn, db: DbSession) -> dict:
 
     commit_or_fail(db)
     return ok(PredictionOut.model_validate(prediction))
+
+
+# P1 service boundary — registered with the shared P3_API_KEY dependency the
+# endpoint has always documented. (It was reachable unauthenticated only while
+# P3_API_KEY was empty, which disables verify_p1_api_key.) Registered after the
+# function definition; kept include_in_schema=False so the generated OpenAPI
+# contract is unchanged.
+router.add_api_route(
+    "/internal/predictions",
+    ingest_prediction,
+    methods=["POST"],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_p1_api_key)],
+    include_in_schema=False,
+)
 
 
 @router.get("/nodes/{node_id}/prediction")

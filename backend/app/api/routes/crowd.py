@@ -4,12 +4,13 @@ P3 returns the stored current crowd state for a node. P3 does not calculate
 crowd state (EV-016 §6, EV-003 §10).
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.api.routes.events import get_event_or_404
 from app.core.errors import AppError, ok
+from app.core.security import verify_p1_api_key
 from app.db.session import commit_or_fail
 from app.models.crowd import CrowdState
 from app.schemas.crowd import CrowdIngestIn, CrowdOut
@@ -30,7 +31,6 @@ def get_node_crowd(node_id: int, db: DbSession) -> dict:
     return ok(CrowdOut.model_validate(row))
 
 
-@router.post("/internal/crowd", status_code=status.HTTP_201_CREATED)
 def ingest_crowd(payload: CrowdIngestIn, db: DbSession) -> dict:
     """P1 → P3 current crowd-state ingestion (EV-016 §14 /api/internal/crowd).
 
@@ -74,3 +74,18 @@ def ingest_crowd(payload: CrowdIngestIn, db: DbSession) -> dict:
 
     commit_or_fail(db)
     return ok(CrowdOut.model_validate(row))
+
+
+# P1 service boundary — registered with the shared P3_API_KEY dependency the
+# endpoint has always documented. (It was reachable unauthenticated only while
+# P3_API_KEY was empty, which disables verify_p1_api_key.) Registered after the
+# function definition; kept include_in_schema=False so the generated OpenAPI
+# contract is unchanged.
+router.add_api_route(
+    "/internal/crowd",
+    ingest_crowd,
+    methods=["POST"],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_p1_api_key)],
+    include_in_schema=False,
+)

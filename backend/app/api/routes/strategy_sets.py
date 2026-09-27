@@ -6,10 +6,10 @@ Route handlers validate input and delegate every state change to
 PATCH or hard-delete endpoint (EV-016 §16–§17).
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
-from app.api.deps import CurrentCoordinator, DbSession
+from app.api.deps import CurrentCoordinator, CurrentOperator, DbSession
 from app.api.routes.events import get_event_or_404
 from app.core.errors import AppError, ok
 from app.db.session import commit_or_fail
@@ -35,7 +35,10 @@ def _strategy_set_out(strategy_set: StrategySet) -> StrategySetOut:
     return StrategySetOut.model_validate(strategy_set)
 
 
-@router.post("/events/{event_id}/strategy-sets", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/events/{event_id}/strategy-sets", status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(CurrentOperator)],
+)
 def create_strategy_set(event_id: int, payload: StrategySetCreate, db: DbSession) -> dict:
     """Create a Strategy Set from P2-produced strategies (EV-016 §9, EV-037 §9).
 

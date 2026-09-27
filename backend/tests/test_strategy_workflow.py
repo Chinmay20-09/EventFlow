@@ -56,6 +56,7 @@ def test_create_strategy_set(client):
                 }
             ]
         },
+        headers=ORGANIZER_HEADERS,
     )
 
     assert response.status_code == 201
@@ -80,6 +81,7 @@ def test_strategy_set_rejects_foreign_nodes_and_stores_nothing(client):
                 {"source_node_id": north, "destination_node_id": stranger, "action": "X"}
             ]
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -91,9 +93,50 @@ def test_strategy_set_rejects_foreign_nodes_and_stores_nothing(client):
 
 def test_empty_strategy_list_is_rejected(client):
     event_id = create_event(client)
-    response = client.post(f"/api/events/{event_id}/strategy-sets", json={"strategies": []})
+    response = client.post(
+        f"/api/events/{event_id}/strategy-sets",
+        json={"strategies": []},
+        headers=ORGANIZER_HEADERS,
+    )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_create_strategy_set_requires_authentication(client):
+    """Strategy-set creation is an event write — it requires an identity."""
+    event_id = create_event(client)
+    north = create_node(client, event_id, name="North Gate")
+    east = create_node(client, event_id, name="East Zone")
+
+    response = client.post(
+        f"/api/events/{event_id}/strategy-sets",
+        json={
+            "strategies": [
+                {"source_node_id": north, "destination_node_id": east, "action": "REDIRECT_FLOW"}
+            ]
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_create_strategy_set_forbidden_for_visitor(client):
+    """Visitors are read-only (EV-023 §7) — strategy-set creation is a write."""
+    event_id = create_event(client)
+    north = create_node(client, event_id, name="North Gate")
+    east = create_node(client, event_id, name="East Zone")
+
+    response = client.post(
+        f"/api/events/{event_id}/strategy-sets",
+        json={
+            "strategies": [
+                {"source_node_id": north, "destination_node_id": east, "action": "REDIRECT_FLOW"}
+            ]
+        },
+        headers=VISITOR_HEADERS,
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_get_strategy_set_not_found(client):

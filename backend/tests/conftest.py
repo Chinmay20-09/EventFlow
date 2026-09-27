@@ -146,7 +146,7 @@ def create_edge(client: TestClient, event_id: int, from_node_id: int, to_node_id
 
 
 def create_strategy_set(client: TestClient, event_id: int, source: int, dest: int) -> int:
-    """Helper: create a strategy set and return its id."""
+    """Helper: create a strategy set and return its id (organizer-authorized)."""
     response = client.post(
         f"/api/events/{event_id}/strategy-sets",
         json={
@@ -158,6 +158,7 @@ def create_strategy_set(client: TestClient, event_id: int, source: int, dest: in
                 }
             ]
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]["strategy_set_id"]

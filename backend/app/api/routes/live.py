@@ -24,6 +24,8 @@ import logging
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
+from app.core.security import _resolve_token_user
+
 from app.api.deps import DbSession
 from app.api.deps_event import EventWrite
 from app.api.routes.events import get_event_or_404
@@ -183,18 +185,51 @@ def coordinator_status(event_id: int, db: DbSession, node_id: int = Query(...)) 
 async def event_ws(
     websocket: WebSocket,
     event_id: int,
-    user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """Subscribe to one event's live updates (authorized subscribers only).
 
-    Authorization uses the EXISTING mechanisms (JWT bearer or X-User-Id):
+    Authorization uses the EXISTING mechanisms, resolved INSIDE the endpoint
+    (a raising dependency would refuse the HTTP upgrade before the endpoint
+    could accept-then-close): Authorization bearer header first, then the
+    `?token=` query parameter — browser WebSocket clients cannot set the
+    Authorization header, so the JWT may equivalently arrive as `?token=`
+    (HTTP-Sec-WebSocket-Protocol is NOT used; the query parameter is the
+    documented mechanism here) — and finally the X-User-Id development
+    header, mirroring app.core.security.get_current_user's resolution order.
     Organizers must be bound through event_organizers, Coordinators are
-    global operators, Visitors are rejected (4011 close code). Updates for
-    one event can never reach another event's subscribers (per-event
-    connection registry in app.services.live_updates.manager).
+    global operators, Visitors/unauthenticated identities are accepted-then-
+    closed (1008 policy violation). Updates for one event can never reach
+    another event's subscribers (per-event connection registry in
+    app.services.live_updates.manager).
     """
     from app.api.deps_event import authorize_event
+    from app.models.user import User
+
+    def _unauthenticated() -> None:
+        # A rejected handshake must still be accepted-then-closed in Starlette.
+        raise AppError("UNAUTHORIZED", "Authentication required", 401)
+
+    user = None
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        user = _resolve_token_user(auth_header[len("Bearer "):], db)
+    else:
+        token = websocket.query_params.get("token")
+        if token:
+            user = _resolve_token_user(token, db)
+        else:
+            dev_id = websocket.headers.get("x-user-id")
+            if dev_id is not None:
+                try:
+                    user = db.get(User, int(dev_id))
+                except ValueError:
+                    user = None
+                if user is None:
+                    # An unknown identity is not an authenticated identity.
+                    _unauthenticated()
+    if user is None:
+        _unauthenticated()
 
     try:
         event = authorize_event(event_id, user=user, db=db)

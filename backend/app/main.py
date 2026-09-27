@@ -26,6 +26,7 @@ from app.api.routes import (
     p1,
     predictions,
     strategy_sets,
+    weather,
 )
 from app.api.routes import settings as settings_router
 from app.core.config import settings, validate_settings
@@ -87,5 +88,6 @@ for router in (
     alerts.router,
     settings_router.router,
     live.router,
+    weather.router,
 ):
     app.include_router(router)

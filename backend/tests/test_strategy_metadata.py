@@ -5,7 +5,7 @@ are stored VERBATIM from their upstream (mock-marked) sources — P3 never
 generates them — and that simulation data never leaks into live state.
 """
 
-from conftest import COORDINATOR_HEADERS, create_event, create_node
+from conftest import COORDINATOR_HEADERS, ORGANIZER_HEADERS, create_event, create_node
 
 
 def _strategy_set_payload(client, event_id, north, east, **metadata):
@@ -15,7 +15,7 @@ def _strategy_set_payload(client, event_id, north, east, **metadata):
         ]
     }
     payload.update(metadata)
-    response = client.post(f"/api/events/{event_id}/strategy-sets", json=payload)
+    response = client.post(f"/api/events/{event_id}/strategy-sets", json=payload, headers=ORGANIZER_HEADERS)
     assert response.status_code == 201, response.text
     return response.json()["data"]
 
