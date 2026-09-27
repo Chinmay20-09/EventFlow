@@ -15,7 +15,7 @@ VALID_ROLES = {ROLE_ORGANIZER, ROLE_COORDINATOR, ROLE_VISITOR}
 
 
 class User(Base):
-    """An MVP user. Role is provisioned out-of-band; identity comes from auth."""
+    """An MVP user. Role and identity come from the authenticated account."""
 
     __tablename__ = "users"
 
@@ -41,4 +41,3 @@ class User(Base):
         back_populates="organizers",
         lazy="selectin",
     )
-

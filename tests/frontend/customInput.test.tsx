@@ -12,6 +12,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import App from "../../frontend/src/App"
 import CustomInputDialog from "../../frontend/src/CustomInputDialog"
+import { clearAccessToken } from "../../frontend/src/api"
 
 const STORED_EVENT = {
   event_id: 42,
@@ -36,6 +37,35 @@ function mockP3() {
       const url = String(input)
       const method = init?.method ?? "GET"
       fetchCalls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+
+      if (method === "GET" && url.endsWith("/api/health")) {
+        return new Response(
+          JSON.stringify({ success: true, data: { status: "ok", environment: "test", max_simulation_attempts: 2 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }
+
+      if (method === "POST" && url.endsWith("/api/auth/register")) {
+        const payload = JSON.parse(String(init?.body))
+        return new Response(
+          JSON.stringify({ success: true, data: { user_id: 7, username: payload.username, email: payload.email, role: payload.role } }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        )
+      }
+
+      if (method === "POST" && url.endsWith("/api/auth/login")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              access_token: "test-access-token",
+              token_type: "bearer",
+              user: { user_id: 7, username: "organizer", email: "organizer@example.com", role: "ORGANIZER" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }
 
       if (method === "POST" && url.endsWith("/api/events")) {
         const payload = JSON.parse(String(init?.body))
@@ -69,6 +99,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  clearAccessToken()
 })
 
 describe("CustomInputDialog (P4 → P3 flow)", () => {
@@ -194,13 +225,13 @@ describe("Custom Input inside the App dashboard", () => {
     const user = userEvent.setup()
     render(<App />)
 
-    // The app starts on the fake login screen (existing behavior).
-    await user.type(screen.getByPlaceholderText("organizer@event.com"), "organizer@event.com")
-    await user.type(screen.getByPlaceholderText("••••••••"), "password")
-    await user.click(screen.getByRole("button", { name: "Login" }))
+    // The auth screen is removed for now: the app auto-signs-in as the
+    // default admin (admin/admin123) once the backend health check passes,
+    // so the dashboard renders immediately.
+    await waitFor(() => expect(screen.getByText(/Organizer Command Center/)).toBeTruthy())
 
     // The Custom Input button appears next to "Open Sandbox".
-    expect(screen.getByRole("button", { name: "Custom Input" })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Custom Input" })).toBeTruthy())
 
     await user.click(screen.getByRole("button", { name: "Custom Input" }))
     await user.type(screen.getByLabelText(/Event name/i), "EV-CUSTOM-INPUT-001")
@@ -216,5 +247,20 @@ describe("Custom Input inside the App dashboard", () => {
     expect(screen.getByText("Stored custom event data")).toBeTruthy()
     expect(screen.getByText(/EV-CUSTOM-INPUT-001/)).toBeTruthy()
     expect(screen.getByText(/#42/)).toBeTruthy()
+  })
+
+  it("auto-signs-in with the default admin credentials once the backend is reachable", async () => {
+    render(<App />)
+
+    await waitFor(() =>
+      expect(
+        fetchCalls.some(
+          (call) =>
+            call.method === "POST" &&
+            call.url.endsWith("/api/auth/login") &&
+            (call.body as { login?: string })?.login === "admin",
+        ),
+      ).toBe(true),
+    )
   })
 })

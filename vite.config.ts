@@ -6,6 +6,9 @@ const apiPort = Number(process.env.API_PORT ?? 8000)
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     proxy: {
       '/api': {

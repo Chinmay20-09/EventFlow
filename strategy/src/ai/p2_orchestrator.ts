@@ -12,7 +12,9 @@ import {
 import {
   P2LLMService,
   GroqLLMProvider,
+  MockLLMProvider,
 } from "./llm";
+import type { LLMProvider } from "./llm";
 
 import {
   validateAIResponse,
@@ -20,7 +22,7 @@ import {
 
 import {
   p2ToolRegistry,
-} from "../tools/tool_registry";
+} from "../../../integration/tools/tool_registry";
 
 import {
   getStrategyById,
@@ -28,11 +30,11 @@ import {
 
 import type {
   SimulationResult,
-} from "../engine/types";
+} from "../../../engine/src/types";
 
 import type {
   P1SimulationContext,
-} from "../tools/p1_simulation_tool";
+} from "../../../integration/tools/p1_simulation_tool";
 
 import {
   explainSimulationResult,
@@ -99,21 +101,27 @@ export interface P2OrchestratorResult {
 export class P2Orchestrator {
   private readonly llm: P2LLMService;
 
-  constructor() {
+  constructor(provider?: LLMProvider) {
+    if (provider) {
+      this.llm = new P2LLMService(provider);
+      return;
+    }
+
     const apiKey =
       import.meta.env.VITE_GROQ_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey && import.meta.env.MODE !== "test") {
       throw new Error(
         "VITE_GROQ_API_KEY is missing. Add it to your .env file."
       );
     }
 
-    const provider =
-      new GroqLLMProvider(apiKey);
+    const llmProvider = apiKey
+      ? new GroqLLMProvider(apiKey)
+      : new MockLLMProvider();
 
     this.llm =
-      new P2LLMService(provider);
+      new P2LLMService(llmProvider);
   }
 
 
@@ -264,10 +272,7 @@ export class P2Orchestrator {
           this.runBaselineAnalysis(
             input.p1_context,
             context
-          );
-
-
-        if (!baselineResponse.success) {
+          );        if (!baselineResponse.success) {
 
           return {
             success: false,
@@ -278,11 +283,21 @@ export class P2Orchestrator {
             response:
               baselineResponse.message,
 
-            context,
-          };
+            error:
+              baselineResponse.message,
 
+            context,
+
+          };
         }
 
+        /*
+         * Analysis intents must answer with the real P1 result — the
+         * organizer asked about the CURRENT crowd situation, so the
+         * response is derived from the simulation output, never from
+         * the generic LLM text.
+         */
+        return this.handleExplanation(context, intentResult.intent);
       }
 
 
@@ -477,7 +492,7 @@ export class P2Orchestrator {
       });
 
 
-    addToolResult(
+    context.tool_results = addToolResult(
       context,
       {
         tool_name:
@@ -494,7 +509,7 @@ export class P2Orchestrator {
         data:
           toolResult.data,
       }
-    );
+    ).tool_results;
 
 
     if (!toolResult.success) {
@@ -750,7 +765,7 @@ export class P2Orchestrator {
       });
 
 
-    addToolResult(
+    context.tool_results = addToolResult(
       context,
       {
         tool_name:
@@ -767,7 +782,7 @@ export class P2Orchestrator {
         data:
           simulation.data,
       }
-    );
+    ).tool_results;
 
 
     /*
@@ -892,11 +907,21 @@ export class P2Orchestrator {
   private handleExplanation(
     context: ReturnType<
       typeof createAIContext
-    >
+    >,
+
+    /*
+     * When analysis intents (analyze_congestion etc.) reach the explanation
+     * path after running the P1 baseline, the detected intent must be kept
+     * so the caller sees what was actually analyzed.
+     */
+    intentOverride?: string,
   ): P2OrchestratorResult {
 
     const result =
       context.p1_state.simulation;
+
+    const reportedIntent =
+      intentOverride ?? "explain_result";
 
 
     if (!result) {
@@ -904,8 +929,7 @@ export class P2Orchestrator {
       return {
         success: true,
 
-        intent:
-          "explain_result",
+        intent: reportedIntent,
 
         response:
           "There is currently no P1 simulation result available to explain.",
@@ -925,8 +949,7 @@ export class P2Orchestrator {
     return {
       success: true,
 
-      intent:
-        "explain_result",
+      intent: reportedIntent,
 
       response:
         formatOrganizerResponse(

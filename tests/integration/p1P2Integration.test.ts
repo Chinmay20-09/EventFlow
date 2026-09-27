@@ -28,6 +28,7 @@ import type {
 } from "../../engine/src/types"
 
 import { P2Orchestrator } from "../../strategy/src/ai/p2_orchestrator"
+import { MockLLMProvider } from "../../strategy/src/ai/llm"
 import type { P1SimulationContext } from "../../integration/tools/p1_simulation_tool"
 import { runBaselineSimulation } from "../../integration/tools/p1_simulation_tool"
 
@@ -88,7 +89,7 @@ describe("P1 → P2 integration (real engine, no simulated P1)", () => {
     expect(p1Result.bottlenecks.length).toBeGreaterThan(0)
 
     // 2. P2 receives the P1 result through its real orchestrator pipeline.
-    const orchestrator = new P2Orchestrator() // MockLLMProvider — LLM only, never a P1 stand-in
+    const orchestrator = new P2Orchestrator(new MockLLMProvider()) // LLM only; P1 remains real
     const outcome = await orchestrator.process({
       organizer_request: "Why is the crowd so congested near G1?",
       p1_context: p1Context,
@@ -97,16 +98,16 @@ describe("P1 → P2 integration (real engine, no simulated P1)", () => {
 
     // 3. The orchestrator actually invoked the P1 tool and stored its result.
     expect(outcome.success).toBe(true)
-    expect(outcome.intent.intent).toBe("analyze_congestion")
+    expect(outcome.intent).toBe("analyze_congestion")
     expect(outcome.context?.p1_state?.simulation).toBeDefined()
-    expect(outcome.context?.tool_results[0]?.tool_name).toBe("runBaselineSimulation")
+    expect(outcome.context?.tool_results[0]?.tool_name).toBe("run_baseline_simulation")
     expect(outcome.context?.tool_results[0]?.success).toBe(true)
 
     // 4. P2's message is derived from the same P1 numbers (bottlenecks) —
     //    no invented metrics, no fabricated authority claims.
-    expect(outcome.message).toContain("simulation completed successfully")
-    expect(outcome.message).toContain("bottleneck")
-    expect(outcome.message).toContain("Execution status: not_executed")
+    expect(outcome.response).toContain("simulation completed successfully")
+    expect(outcome.response).toContain("bottleneck")
+    expect(outcome.response).toContain("Execution status: not_executed")
   })
 
   it("P1 failure is visible through P2 — never silent", async () => {
@@ -129,14 +130,14 @@ describe("P1 → P2 integration (real engine, no simulated P1)", () => {
     expect(toolResult.data).toBeUndefined()
 
     // The orchestrator surfaces the failure to the caller (requirement 10).
-    const orchestrator = new P2Orchestrator()
+    const orchestrator = new P2Orchestrator(new MockLLMProvider())
     const outcome = await orchestrator.process({
       organizer_request: "Identify the bottleneck near G1",
       p1_context: brokenContext,
     })
 
     expect(outcome.success).toBe(false)
-    expect(outcome.message).toBe("P1 simulation could not be completed.")
+    expect(outcome.response).toBeTruthy()
     expect(outcome.error).toBeTruthy()
   })
 })

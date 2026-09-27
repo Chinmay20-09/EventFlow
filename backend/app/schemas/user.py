@@ -9,19 +9,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.user import ROLE_COORDINATOR, ROLE_ORGANIZER, ROLE_VISITOR
+from app.models.user import ROLE_COORDINATOR, ROLE_VISITOR
 from app.schemas.common import OrmModel
 
-RegistrationRole = Literal["VISITOR", "COORDINATOR"]
+RegistrationRole = Literal["VISITOR", "COORDINATOR", "ORGANIZER"]
 
 
 class RegisterRequest(BaseModel):
     """Fields required for self-registration from a client (e.g. the Flutter app).
 
-    `role` is optional and defaults to VISITOR. COORDINATOR may be chosen by
-    the client for operational users; ORGANIZER is deliberately not
-    registrable — Organizer accounts are bound to events server-side and are
-    provisioned out-of-band by an operator.
+    `role` is optional and defaults to VISITOR. Coordinators and Organizers
+    may choose their operational role during registration.
     """
 
     username: str = Field(min_length=1, max_length=80)

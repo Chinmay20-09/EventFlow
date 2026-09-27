@@ -123,6 +123,7 @@ def test_custom_input_roundtrip_unique_value(client):
             "start_time": "2026-10-10T10:00:00Z",
             "end_time": "2026-10-10T22:00:00Z",
         },
+        headers=ORGANIZER_HEADERS,
     )
     assert created.status_code == 201, created.text
     assert created.json()["data"]["name"] == marker

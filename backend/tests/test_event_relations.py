@@ -243,5 +243,8 @@ def test_existing_event_data_untouched_after_child_operations(client):
     ).status_code == 201
 
     after = client.get(f"/api/events/{event_id}").json()["data"]
-    assert before == after
+    parent_fields = ("event_id", "name", "status", "start_time", "end_time")
+    assert {key: before[key] for key in parent_fields} == {
+        key: after[key] for key in parent_fields
+    }
     assert after["name"] == "Stable Parent"

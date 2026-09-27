@@ -99,31 +99,33 @@ def test_register_duplicate_email_rejected(client):
     assert second.json()["error"]["code"] == "CONFLICT"
 
 
-def test_register_rejects_role_escalation(client):
-    """ORGANIZER (and any unknown role) is rejected — never created silently."""
+def test_register_as_organizer_succeeds(client):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "neworganizer",
+            "email": "neworganizer@example.com",
+            "password": "TestPass!2026",
+            "role": "ORGANIZER",
+        },
+    )
+    assert response.status_code == status.HTTP_201_CREATED, response.text
+    assert response.json()["data"]["role"] == "ORGANIZER"
+
+
+def test_register_rejects_unknown_role(client):
+    """Unknown roles are rejected rather than silently accepted."""
     response = client.post(
         "/api/auth/register",
         json={
             "username": "escalator",
             "email": "escalator@example.com",
             "password": "TestPass!2026",
-            "role": "ORGANIZER",  # not registrable — provisioned out-of-band
+            "role": "SUPERADMIN",
         },
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-
-    unknown = client.post(
-        "/api/auth/register",
-        json={
-            "username": "escalator2",
-            "email": "escalator2@example.com",
-            "password": "TestPass!2026",
-            "role": "SUPERADMIN",
-        },
-    )
-    assert unknown.status_code == 422
-    assert unknown.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_login_with_email_succeeds(client):
@@ -140,6 +142,19 @@ def test_login_with_email_succeeds(client):
     assert data["access_token"]
     assert data["token_type"] == "bearer"
     assert data["user"]["email"] == "mailer@example.com"
+
+
+def test_login_with_email_is_case_insensitive(client):
+    client.post(
+        "/api/auth/register",
+        json={"username": "uppermail", "email": "uppermail@example.com", "password": "TestPass!2026"},
+    )
+    response = client.post(
+        "/api/auth/login",
+        json={"login": "UPPERMAIL@EXAMPLE.COM", "password": "TestPass!2026"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["user"]["email"] == "uppermail@example.com"
 
 
 def test_login_with_username_succeeds(client):
@@ -250,3 +265,42 @@ def test_users_table_has_auth_columns(client, db):
     """Diagnostic (task §8): the actual test-database table carries the columns."""
     columns = {c["name"] for c in inspect(db.bind).get_columns("users")}
     assert {"user_id", "username", "role", "created_at", "email", "password_hash"} <= columns
+
+
+def test_default_admin_login_works(client):
+    """The startup seed creates the default admin account (admin/admin123).
+
+    Startup seeding is skipped for ENVIRONMENT=test (it would shift the exact
+    user ids the other tests assert), so the test seeds the account directly
+    through the same code path and then logs in with it.
+    """
+    from app.core.security import hash_password
+    from app.db.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME, ensure_default_admin
+    from app.db.session import get_engine, get_sessionmaker
+
+    db = get_sessionmaker()()
+    try:
+        db.add(
+            User(
+                username=DEFAULT_ADMIN_USERNAME,
+                email=DEFAULT_ADMIN_EMAIL,
+                password_hash=hash_password(DEFAULT_ADMIN_PASSWORD),
+                role="ORGANIZER",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # The idempotent seeder must treat the existing account as done.
+    ensure_default_admin(get_engine())
+
+    response = client.post(
+        "/api/auth/login",
+        json={"login": "admin", "password": "admin123"},
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+    data = response.json()["data"]
+    assert data["user"]["username"] == "admin"
+    assert data["user"]["role"] == "ORGANIZER"
+    assert data["access_token"]

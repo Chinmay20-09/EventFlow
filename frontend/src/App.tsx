@@ -1,7 +1,33 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import DigitalTwinPanel from "./components/DigitalTwinPanel"
-import { getApiHealth, login as loginToApi } from "./api"
+import CustomInputDialog from "./CustomInputDialog"
+import {
+  getApiHealth,
+  login as loginToApi,
+} from "./api"
 import type { ApiHealth } from "./api"
+import type { StoredEvent } from "./api"
+
+type StoredCustomInputCardProps = {
+  themeClasses: (classes: string) => string
+  record: StoredEvent | null
+}
+
+function StoredCustomInputCard({ themeClasses, record }: StoredCustomInputCardProps) {
+  if (!record) return null
+
+  return (
+    <section className={themeClasses("mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5")}>
+      <h3 className={themeClasses("text-lg font-semibold")}>Stored custom event data</h3>
+      <p className={themeClasses("text-sm text-slate-300 mt-2")}>
+        #{record.event_id} — {record.name}
+      </p>
+      <p className={themeClasses("text-xs text-slate-400 mt-1")}>
+        Retrieved from the EventFlow backend · {record.status}
+      </p>
+    </section>
+  )
+}
 
 function App() {
   const [isDark, setIsDark] = useState(true)
@@ -18,13 +44,8 @@ function App() {
   const [alertThreshold, setAlertThreshold] = useState(85)
   const [autoAlerts, setAutoAlerts] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [loginError, setLoginError] = useState("")
-  const [loginPending, setLoginPending] = useState(false)
   const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null)
-  const [apiError, setApiError] = useState("")
+  const [storedCustomInput, setStoredCustomInput] = useState<StoredEvent | null>(null)
   const [selectedNode, setSelectedNode] = useState("A")
 
   useEffect(() => {
@@ -35,12 +56,10 @@ function App() {
         const health = await getApiHealth()
         if (active) {
           setApiHealth(health)
-          setApiError("")
         }
-      } catch (error) {
+      } catch {
         if (active) {
           setApiHealth(null)
-          setApiError(error instanceof Error ? error.message : "EventFlow API is unavailable.")
         }
       }
     }
@@ -52,6 +71,21 @@ function App() {
       clearInterval(interval)
     }
   }, [])
+
+  // Auth screen removed for now: auto-sign-in as the default admin account
+  // (admin / admin123), which the backend seeds at startup. The attempt runs
+  // once the health check first reports the backend as reachable.
+  const autoLoginAttempted = useRef(false)
+  useEffect(() => {
+    if (!apiHealth || autoLoginAttempted.current) return
+    autoLoginAttempted.current = true
+    loginToApi("admin", "admin123").catch((error) => {
+      console.error(
+        "Default admin auto-login failed:",
+        error instanceof Error ? error.message : error,
+      )
+    })
+  }, [apiHealth])
 
   const themeClasses = (classes: string) => {
     const addThemeTransition = (value: string) =>
@@ -235,24 +269,6 @@ const alerts =
         },
       ]
 
-  const handleLogin = async () => {
-  if (!email.trim() || !password.trim()) {
-    setLoginError("Please enter email and password")
-    return
-  }
-
-    setLoginPending(true)
-    setLoginError("")
-    try {
-      await loginToApi(email.trim(), password)
-      setIsLoggedIn(true)
-    } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Unable to sign in.")
-    } finally {
-      setLoginPending(false)
-    }
-  }
-
 const handleShareMap = async () => {
   const mapData = `
 EventFlow Crowd Map
@@ -281,62 +297,6 @@ Transit: ${transitCapacity}%
   return () => clearInterval(timer)
 }, []) 
     
-  if (!isLoggedIn) {
-  return (
-    <div className={themeClasses("min-h-screen bg-slate-950 flex items-center justify-center p-6 transition-colors duration-300")}>
-      <div className={themeClasses("w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8")}>
-        <h1 className={`text-3xl font-bold text-center ${isDark ? "text-white" : "text-slate-900"}`}>
-          EventFlow
-        </h1>
-
-        <p className={themeClasses("text-slate-400 text-center mt-2")}>
-          AI Event Command Center
-        </p>
-
-        <p className={`text-center text-sm mt-4 ${apiHealth ? "text-green-400" : "text-amber-400"}`}>
-          {apiHealth ? "Backend connected" : apiError || "Connecting to backend…"}
-        </p>
-
-        <div className={themeClasses("mt-8 space-y-4")}>
-          <div>
-            <label className={themeClasses("text-sm text-slate-300")}>Email</label>
-            <input
-              type="email"
-              placeholder="organizer@event.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={`w-full mt-2 rounded-lg px-4 py-3 outline-none focus:border-blue-500 ${themeClasses("bg-slate-800 border border-slate-700")} ${isDark ? "text-white" : "text-slate-900"}`}
-            />
-          </div>
-
-          <div>
-            <label className={themeClasses("text-sm text-slate-300")}>Password</label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={`w-full mt-2 rounded-lg px-4 py-3 outline-none focus:border-blue-500 ${themeClasses("bg-slate-800 border border-slate-700")} ${isDark ? "text-white" : "text-slate-900"}`}
-            />
-          </div>
-
-          {loginError && (
-            <p className={themeClasses("text-red-400 text-sm")}>{loginError}</p>
-          )}
-
-          <button
-            onClick={handleLogin}
-            disabled={loginPending}
-            className={themeClasses("w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 rounded-lg py-3 font-semibold text-white")}
-          >
-            {loginPending ? "Signing in…" : "Login"}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
   // Existing dashboard starts here
   return (
     <div
@@ -460,8 +420,7 @@ Transit: ${transitCapacity}%
     Open Sandbox
   </button>
 
-  {/* Custom Input feature: opens the modal that POSTs to P3, then GETs the
-      stored record back and lifts it into the dashboard state. */}
+  {/* Event creation is available after backend authentication. */}
   <CustomInputDialog
     themeClasses={themeClasses}
     isDark={isDark}

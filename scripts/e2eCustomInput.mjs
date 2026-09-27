@@ -1,12 +1,14 @@
 /**
- * Browser E2E verification of the Custom Input feature.
+ * Browser E2E verification of the login + Custom Input flows.
  *
- * Proves the full flow in a real Chrome browser:
- *   P4 UI (localhost:5173) → POST /api/events (P3, :8000) → PostgreSQL
- *   → GET /api/events/{id} → P4 UI displays the backend record.
+ * Proves the full flows in a real Chrome browser:
+ *   Register (UI) → POST /api/auth/register (P3, :8000) → bcrypt → JWT login
+ *   → dashboard → Custom Input (UI) → POST /api/events (P3) → PostgreSQL
+ *   → GET /api/events/{id} → UI displays the backend record.
  *
  * Run:  node scripts/e2eCustomInput.mjs   (backend + vite dev must be running)
  * Exit 0 = all checks passed, exit 1 = something broke.
+ * Screenshots are written to e2e-artifacts/.
  */
 
 import { chromium } from "playwright-core"
@@ -14,6 +16,8 @@ import { mkdirSync } from "node:fs"
 
 const FRONTEND_URL = process.env.E2E_FRONTEND_URL ?? "http://localhost:5173"
 const MARKER = `EV-CUSTOM-INPUT-UI-${Date.now()}`
+// Auth screen removed for now: the app auto-signs-in with the default admin
+// account (seeded by the backend at startup), so the E2E skips registration.
 const ARTIFACTS = "e2e-artifacts"
 mkdirSync(ARTIFACTS, { recursive: true })
 
@@ -51,7 +55,7 @@ page.on("requestfailed", (req) => {
 })
 page.on("response", async (res) => {
   const req = res.request()
-  if (res.url().includes("/api/events")) {
+  if (res.url().includes("/api/")) {
     let body = null
     try {
       body = await res.json()
@@ -63,43 +67,50 @@ page.on("response", async (res) => {
 })
 
 try {
-  // --- 1. Load the P4 UI ---------------------------------------------------
+  // --- 1. Load the P4 UI — the dashboard (auth screen removed for now) -----
   await page.goto(FRONTEND_URL, { waitUntil: "domcontentloaded", timeout: 20_000 })
-  await page.getByPlaceholder("organizer@event.com").waitFor({ timeout: 15_000 })
+  const dashboard = page.getByText("Organizer Command Center")
+  await dashboard.waitFor({ timeout: 20_000 })
   check("P4 UI loads at " + FRONTEND_URL, true)
 
-  // --- 2. Login (existing fake login screen) --------------------------------
-  await page.getByPlaceholder("organizer@event.com").fill("organizer@event.com")
-  await page.getByPlaceholder("••••••••").fill("password")
-  await page.getByRole("button", { name: "Login" }).click()
-  check("Login succeeds", true)
+  // Health polling should flip to "Backend connected" and the app should
+  // auto-login as the default admin (admin/admin123).
+  await page.getByText("Backend connected").waitFor({ timeout: 20_000 })
+  check("Dashboard shows 'Backend connected'", true)
+  const loginCall = apiCalls.find((c) => c.method === "POST" && c.url.endsWith("/api/auth/login"))
+  check("Auto-login as default admin returned 200 with token", loginCall?.status === 200 && !!loginCall?.body?.data?.access_token)
+  check("Dashboard rendered after auto-login", await dashboard.isVisible())
+  await page.screenshot({ path: `${ARTIFACTS}/01-dashboard-after-auto-login.png` })
 
-  // --- 3. Custom Input button is visible ------------------------------------
+  // --- 2. Custom Input button is visible ------------------------------------
   const customBtn = page.getByRole("button", { name: "Custom Input" })
   await customBtn.waitFor({ timeout: 10_000 })
   check("Custom Input button visible in header", await customBtn.isVisible())
 
-  // --- 4. Validation: empty submit is blocked client-side --------------------
+  // --- 3. Validation: empty submit is blocked client-side --------------------
   await customBtn.click()
   await page.getByText("Enter event data").waitFor({ timeout: 5_000 })
   await page.getByRole("button", { name: "Submit" }).click()
   const validationShown = await page.getByText("All fields are required.").isVisible()
   check("Empty submit shows validation error", validationShown)
-  check("Empty submit did NOT hit the backend", apiCalls.length === 0)
+  const eventsCallsBeforeFill = apiCalls.filter((c) => c.url.includes("/api/events")).length
+  check("Empty submit did NOT hit the backend", eventsCallsBeforeFill === 0)
+  await page.screenshot({ path: `${ARTIFACTS}/04-validation-error.png` })
 
-  // --- 5. Fill and submit the real values ------------------------------------
+  // --- 4. Fill and submit the real values ------------------------------------
   await page.getByLabel("Event name").fill(MARKER)
   await page.getByLabel("Event date").fill("2026-10-15")
   await page.getByLabel("Start time").fill("10:00")
   await page.getByLabel("End time").fill("22:00")
+  await page.screenshot({ path: `${ARTIFACTS}/05-custom-input-filled.png` })
   await page.getByRole("button", { name: "Submit" }).click()
 
-  // --- 6. Success view appears ----------------------------------------------
+  // --- 5. Success view appears ----------------------------------------------
   const stored = page.getByTestId("custom-input-stored")
   await stored.waitFor({ timeout: 15_000 })
   check("Success view (stored record) appears", true)
 
-  // --- 7. Network proof: POST then GET hit P3 --------------------------------
+  // --- 6. Network proof: POST then GET hit P3 --------------------------------
   const post = apiCalls.find((c) => c.method === "POST" && c.url.endsWith("/api/events"))
   check(
     "POST /api/events sent to P3",
@@ -122,7 +133,7 @@ try {
     !!get && get.body?.success === true && get.body?.data?.name === MARKER,
   )
 
-  // --- 8. UI displays the backend-returned record ----------------------------
+  // --- 7. UI displays the backend-returned record ----------------------------
   const successText = await stored.innerText()
   check("Modal shows 'Saved to the database and fetched back'", successText.includes("Saved to the database"))
   check("Modal shows the backend record name", successText.includes(MARKER))
@@ -134,9 +145,9 @@ try {
     `#id shown vs GET event_id ${idFromGet}`,
   )
 
-  await page.screenshot({ path: `${ARTIFACTS}/custom-input-success-modal.png`, fullPage: false })
+  await page.screenshot({ path: `${ARTIFACTS}/05-custom-input-success-modal.png` })
 
-  // --- 9. Overview card shows the fetched record after closing the modal -----
+  // --- 8. Overview card shows the fetched record after closing the modal -----
   await page.getByRole("button", { name: "Done" }).click()
   const card = page.getByText("Stored custom event data")
   await card.waitFor({ timeout: 5_000 })
@@ -144,7 +155,7 @@ try {
   check("Overview shows 'Stored custom event data' card", await card.isVisible())
   check("Overview card shows the backend record name", cardText.includes(MARKER))
 
-  await page.screenshot({ path: `${ARTIFACTS}/overview-stored-card.png`, fullPage: true })
+  await page.screenshot({ path: `${ARTIFACTS}/06-overview-stored-card.png` })
 } catch (err) {
   check("E2E script completed without unexpected failure", false, String(err))
   await page.screenshot({ path: `${ARTIFACTS}/failure.png`, fullPage: true }).catch(() => {})
@@ -163,4 +174,5 @@ if (failed.length > 0) {
   for (const r of failed) console.log("  ✗", r.name, r.detail)
   process.exit(1)
 }
-console.log("Unique marker used:", MARKER)
+console.log("Marker used:", MARKER)
+console.log("Screenshots in:", ARTIFACTS + "/")

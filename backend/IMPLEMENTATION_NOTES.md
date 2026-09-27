@@ -472,9 +472,10 @@ reads remain public (EV-023 §7, §10). Protected endpoints now accept BOTH
 identity they return 401 `UNAUTHORIZED`, with the wrong role 403 `FORBIDDEN`.
 The state machine and approval workflow are untouched.
 
-**Registration.** `RegisterRequest` has NO role field (`extra="forbid"`) —
-every self-registered account is a VISITOR; Organizer/Coordinator accounts
-are provisioned out-of-band by an operator (no privilege escalation).
+**Registration.** `RegisterRequest` accepts `VISITOR`, `COORDINATOR`, or
+`ORGANIZER` (default `VISITOR`) and rejects all other roles (`extra="forbid"`).
+Organizer accounts may self-register; event ownership is still bound
+server-side through the event_organizers association table.
 Passwords are stored only as bcrypt hashes (`password_hash`, never
 plaintext); hashes never appear in any response (`UserOut`).
 
