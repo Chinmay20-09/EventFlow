@@ -27,20 +27,22 @@ http://localhost:3000/* and http://127.0.0.1:3000/* for the default local port.
 The browser map key is necessarily visible to browsers; never put an AI/private service key there.
 No real key is included in this ZIP. Missing/invalid keys show an actionable error, not a fake map.
 
-## Simple local accounts
+## Administrator accounts and owner approval
 
 When signed out, opening localhost shows the existing login/signup screen without the map or sidebar.
 Direct links to Live Map, AI Sandbox, Updates, Reports and Sandbox also require login.
-After login/signup, Live Map opens automatically with the existing sidebar.
+After login, Live Map opens automatically with the existing sidebar.
 An already valid signed-in session goes directly to Live Map. Log out to return to the login screen.
 
-Open Administrator, then Sign up. Enter any non-empty user ID, user name and password.
-No fixed ID pattern, password composition rules, ChatGPT account or approval is required.
-Signup and login both redirect to /live-map.
-Passwords are salted and hashed. Accounts and sessions persist across server restarts.
+The first account created on an empty server becomes the approved owner. Every later signup
+is created pending and lands on the Administrator screen with an "approval pending" state;
+the owner approves or declines those requests in Administrator (Administrator requests section).
+User IDs are 3-64 characters (letters, numbers, dots, underscores, hyphens) and signup
+passwords need at least 12 characters. Approval decisions revoke the affected account's sessions.
+Passwords are salted and hashed (scrypt). Accounts, sessions and approval state persist across
+server restarts. Login attempts are rate limited (8 per account per 15 minutes).
 Local information is saved by the Node server in .eventflow-local/data.json.
 This is a single-machine development setup, not production authentication.
-Anyone with access to this local signup page can create an administrator account.
 Do not expose this development server publicly.
 
 ## Event map workflow

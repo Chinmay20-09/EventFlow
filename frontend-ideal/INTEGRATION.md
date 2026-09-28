@@ -9,8 +9,8 @@ Google Maps browser key:
 - Only the browser key is returned; AI service tokens remain on the server.
 
 Local endpoints:
-- GET/POST /api/auth: user/session, signup, login, logout.
-- GET /api/admin: administrator access.
+- GET/POST /api/auth: user/session, signup (first account = owner, later signups pending), login, logout.
+- GET/POST /api/admin: owner lists and approves/declines pending administrator accounts.
 - GET/POST /api/event: selected event.
 - GET /api/events/:eventId/graph: saved framing, nodes, edges, routes, updates, node options, websocket URL.
 - POST /api/events/:eventId/location: {bounds:{north,south,east,west},zoom,center:{lat,lng}}.

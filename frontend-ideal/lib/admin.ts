@@ -1,19 +1,37 @@
+import {cookies} from 'next/headers';
 import {redirect} from 'next/navigation';
-import {randomBytes,scryptSync,timingSafeEqual,createHash} from 'node:crypto';
-import {updateStore} from './local-store';
+import {randomBytes} from 'node:crypto';
+import {readStore,updateStore} from './local-store';
+import {digest,newSalt,passwordHash,equalHash,MIN_PASSWORD_LENGTH,USER_ID_PATTERN} from './credentials';
 
 export const SESSION_COOKIE='eventflow_local_session';
 export const SESSION_SECONDS=43200;
-export const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
-export const newSalt=()=>randomBytes(16).toString('hex');
-export const passwordHash=(password:string,salt:string)=>scryptSync(password,salt,64).toString('hex');
-export function equalHash(a:string,b:string){const left=Buffer.from(a,'hex'),right=Buffer.from(b,'hex');return left.length===right.length&&timingSafeEqual(left,right)}
+// Credential rules and password hashing live in lib/credentials.ts (no Next.js
+// imports) so the local development seed reuses the identical implementation.
+export {digest,newSalt,passwordHash,equalHash,MIN_PASSWORD_LENGTH,USER_ID_PATTERN};
 export function cookieHeader(token:string,maxAge=SESSION_SECONDS){return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`}
-// Auth removed for local development: every visitor is treated as an approved
-// local administrator, so the app opens directly on the home (live map) screen.
-const LOCAL_USER={user_id:'local-admin',user_name:'Local Administrator',role:'administrator' as const,created_at:new Date().toISOString(),password_hash:'',salt:'',status:'approved' as const,is_owner:1};
+// Rate limiting mirrors the frontend's per-account window semantics on the
+// local store (15-minute window, frontend allows 8 attempts per account).
+export const RATE_WINDOW_MS=15*60*1000, RATE_LIMIT_ATTEMPTS=8;
+export function rateLimit(key:string,limit=RATE_LIMIT_ATTEMPTS){return updateStore(state=>{
+ const now=Date.now();
+ state.rateLimits=state.rateLimits??[];
+ let entry=state.rateLimits.find(r=>r.key===key);
+ if(!entry){entry={key,attempts:0,resetAt:now+RATE_WINDOW_MS};state.rateLimits.push(entry)}
+ if(entry.resetAt<=now){entry.attempts=0;entry.resetAt=now+RATE_WINDOW_MS}
+ entry.attempts++;
+ return entry.attempts<=limit;
+})}
+export function findAccount(userId:string){return readStore().accounts.find(u=>u.user_id.toLowerCase()===userId.toLowerCase())}
+// Identity resolution mirrors the frontend's role model: `owner` (bootstrap
+// account) > `admin` (approved administrator) > `visitor` (pending/rejected).
 export async function adminIdentity(){
- return {user:LOCAL_USER,role:'admin',request:null};
+ const token=(await cookies()).get(SESSION_COOKIE)?.value;
+ const state=readStore(),session=token?state.sessions.find(s=>s.hash===digest(token)&&s.expiresAt>Date.now()):null;
+ const user=session?state.accounts.find(u=>u.user_id===session.userId):null;
+ if(!user)return {user:null,role:'anonymous' as const,request:null as null};
+ if(user.status!=='approved')return {user,role:'visitor' as const,request:{status:user.status} as {status:string}|null};
+ return {user,role:user.is_owner?('owner' as const):('admin' as const),request:null as null};
 }
 export function createSession(userId:string){
  const token=randomBytes(32).toString('hex');
@@ -21,8 +39,12 @@ export function createSession(userId:string){
  return token;
 }
 export function revokeSession(token:string){updateStore(s=>{s.sessions=s.sessions.filter(x=>x.hash!==digest(token))})}
+// Revokes every session of a non-owner account (used when access is revoked).
+export function revokeUserSessions(userId:string){updateStore(s=>{const target=s.accounts.find(u=>u.user_id===userId);if(target?.is_owner)return;s.sessions=s.sessions.filter(x=>x.userId!==userId)})}
 export async function requireAdministrator(){
  const identity=await adminIdentity();
- if(!identity.user)redirect('/admin');
+ // Pending/rejected accounts authenticate but hold no administrator access.
+ if(!identity.user||identity.role==='visitor')redirect('/admin');
  return identity.user;
 }
+

@@ -6,7 +6,7 @@ export async function GET(){try{if(!(await adminIdentity()).user)return Response
 export async function POST(req:Request){
  if(!sameOrigin(req))return Response.json({error:'Invalid request.'},{status:403});
  try{
-  const who=await adminIdentity();if(!who.user)return Response.json({error:'Administrator login required.'},{status:403});
+  const who=await adminIdentity();if(!['owner','admin'].includes(who.role))return Response.json({error:'Administrator access required.'},{status:403});
   const b=await req.json();
   if(typeof b.name!=='string'||!b.name.trim()||b.name.length>150||typeof b.city!=='string'||!b.city.trim()||b.city.length>200||![b.lat,b.lon].every(Number.isFinite)||Math.abs(b.lat)>90||Math.abs(b.lon)>180)throw Error('Enter an event name and select a city.');
   if(b.bounds&&(![b.bounds.north,b.bounds.south,b.bounds.east,b.bounds.west].every(Number.isFinite)||b.bounds.north<=b.bounds.south||b.bounds.east<=b.bounds.west))throw Error('Invalid city bounds.');

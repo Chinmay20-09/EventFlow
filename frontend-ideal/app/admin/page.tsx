@@ -1,5 +1,3 @@
-import {redirect} from 'next/navigation';
-export default function Admin(){
- // Auth removed for local development: the administrator screen is unreachable.
- redirect('/live-map');
-}
+import AdminPanel from './panel';
+export const dynamic='force-dynamic';
+export default function Admin(){return <AdminPanel/>}
