@@ -4,10 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node scripts/sync-env.mjs && node scripts/dev.mjs",
+    "env:sync": "node scripts/sync-env.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "vitest run",
+    "test": "node scripts/test-frontend-ideal.mjs",
+    "test:unit": "vitest run",
+    "test:stop": "node scripts/test-frontend-ideal.mjs --stop",
     "test:crowd": "tsx scripts/test_Crowd.ts",
     "push:p3": "tsx scripts/pushToP3.ts",
     "preview": "vite preview"

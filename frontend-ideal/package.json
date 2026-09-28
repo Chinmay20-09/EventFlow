@@ -6,12 +6,15 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "node scripts/sync-env.mjs",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app lib hooks components",
     "setup": "node scripts/setup-local.mjs",
+    "seed:test-admin": "node scripts/seed-test-admin.mjs",
+    "verify:test-env": "node scripts/verify-test-env.mjs",
     "test": "node --experimental-strip-types --test tests/map-lock.test.mjs",
     "test:browser": "node tests/browser.cjs",
     "test:api": "node tests/api.cjs"

@@ -12,6 +12,9 @@ There is no OpenStreetMap iframe and no Cloudflare, ChatGPT login, or database s
    npm run setup
 4. Open .env.local, created beside package.json, and enter:
    GOOGLE_MAPS_API_KEY=your_actual_key
+   (Or put GOOGLE_MAPS_API_KEY in the repository root .env instead and run
+   `npm run env:sync` from the root: the same key is then written into this
+   file and frontend/.env.local automatically — see the root README.)
 5. Run:
    npm run dev
 6. Open the localhost URL printed in the terminal.
@@ -67,10 +70,27 @@ Google's traffic layer is separate from EventFlow's live crowd-update websocket.
 
 ## Verify
 
-npm test
+From the repository root, `npm run test` starts this app, waits until it is ready and then
+verifies the whole login flow (login page, API, administrator access, rejected unauthorized
+access, logout) before running the test suites. That is the intended way to launch this app for
+local testing. Inside this folder:
+
+npm test              # map-lock unit tests (node:test)
+npm run test:api      # full API/auth contract suite (boots its own dev server)
 npm run typecheck
 npm run build
 npm start
+
+Two local development helpers are used by `npm run test` and can be run on their own:
+
+npm run seed:test-admin    # create/update the idempotent local test administrator
+npm run verify:test-env    # check a running server (add --base http://127.0.0.1:3000)
+
+The seed writes the account (default `admin` / `admin123`, override with TEST_ADMIN_USERNAME and
+TEST_ADMIN_PASSWORD) into .eventflow-local/ using this app's own account model and scrypt hashing.
+It is development-only: it refuses to run when NODE_ENV=production and never logs the password.
+That account exists only in the local development store — it does not change or weaken the
+authentication and authorization the app always applies.
 
 Optional browser regression tests (Google SDK is mocked, live tiles are not verified):
 npx playwright install chromium

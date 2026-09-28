@@ -19,6 +19,87 @@ This starts the Vite frontend at <http://localhost:5173> and the FastAPI backend
 
 The backend requires `backend/.venv` with `backend/requirements.txt` installed and a configured `backend/.env` (copy `backend/.env.example` and set `DATABASE_URL` to a reachable PostgreSQL database). Set `API_PORT` before `npm run dev` to use a different backend port; the Vite proxy follows that setting.
 
+## Environment and API keys
+
+The repository root `.env` (git-ignored) is the one place for shared keys and service URLs:
+
+```bash
+cp .env.example .env      # then fill in the values you use
+npm run env:sync          # copies the shared keys into both frontends
+```
+
+`npm run env:sync` writes each shared key into the file its app reads at startup —
+`frontend-ideal/.env.local` (Next.js) and `frontend/.env.local` (vinext) — so a key such as
+`GOOGLE_MAPS_API_KEY` only has to be added once:
+
+| Root `.env` key | Where it lands |
+| --- | --- |
+| `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `frontend-ideal/.env.local`, `frontend/.env.local` |
+| `TOMTOM_API_KEY`, `ORCHESTRATOR_URL`, `ORCHESTRATOR_TOKEN`, `EVENTFLOW_WS_URL` | `frontend-ideal/.env.local`, `frontend/.env.local` |
+| `EVENTFLOW_DATA_DIR` | `frontend-ideal/.env.local` (development only) |
+
+- It also runs automatically at the start of `npm run dev` and `npm run test`, and as `predev`
+  for `cd frontend-ideal && npm run dev`.
+- Only keys with a real value are copied: an empty or missing key in the root `.env` never
+  overwrites a value set in an app's own `.env.local`, and comments and app-specific lines are kept.
+  Re-running reports `unchanged`.
+- Values are never printed, and all three files are git-ignored (`.env*`) — no key is committed.
+- The root Vite app reads the root `.env` directly. Only `VITE_`-prefixed variables reach browser
+  code, so keep tokens like `ORCHESTRATOR_TOKEN` unprefixed and server-side.
+- To share another key, add its name to `SHARED_KEYS` in `scripts/sync-env.mjs`.
+
+## Testing frontend-ideal (`npm run test`)
+
+`frontend-ideal/` is the Next.js EventFlow app with its own local JSON-store authentication
+(scrypt hashes, httpOnly session cookie, owner/administrator roles). From the repository root:
+
+```bash
+npm run test
+```
+
+That single command:
+
+1. seeds an idempotent **local development administrator** into `frontend-ideal/.eventflow-local/`
+   (reusing the app's own account model and password hashing; it refuses to run with `NODE_ENV=production`),
+2. starts `frontend-ideal` (dev server) at <http://127.0.0.1:3000> — reusing an already running
+   instance instead of racing a second one, and never starting the old `frontend/` app,
+3. waits for real readiness by polling the app (no fixed sleeps),
+4. verifies the running application: login page, API routes, the administrator login, admin-area
+   access, rejected unauthorized access, rejected wrong password, and logout,
+5. runs the existing automated tests (root `vitest` suite, frontend-ideal `node:test` unit tests,
+   and the frontend-ideal API integration suite when no dev server is already running),
+6. leaves the app running and prints the URL.
+
+```
+  URL        http://127.0.0.1:3000
+  Login      admin / admin123   (local development only)
+  Stop it    npm run test:stop
+```
+
+`admin / admin123` exists **only** in the local development store created by the seed. Production
+authentication is unchanged: no credentials are hardcoded in application code, no authorization
+check is weakened, and the seed refuses to run in production. Override the credentials for a run
+with `TEST_ADMIN_USERNAME` / `TEST_ADMIN_PASSWORD`.
+
+| Command | What it does |
+| --- | --- |
+| `npm run test` | launch + verify frontend-ideal, run every existing test suite, keep the app running |
+| `npm run test -- --fast` | same, but skip the frontend-ideal API integration suite |
+| `npm run test -- --foreground` | run the dev server in the foreground (Ctrl+C stops it) |
+| `npm run test -- --restart` | restart the dev server instead of reusing a running one |
+| `npm run test:stop` | stop the dev server that `npm run test` started |
+| `npm run test:unit` | only the root Vitest suite (Vite command center + engine) |
+
+The app's own suites stay available: `cd frontend-ideal && npm test` (map-lock unit tests) and
+`npm run test:api` (full API/auth contract suite).
+
+Note: the API integration suite starts its own dev server for `frontend-ideal/`, and Next.js allows only
+one dev server per directory. `npm run test` therefore runs it *before* the app it keeps running, and
+skips it (with a message) when a dev server for the app is already running — use `npm run test:stop`
+first if you want it included in that situation. If the verification ever finds the dev server dead
+(for example a stale dev build left by another server), `npm run test` clears the dev build, restarts
+the app and verifies once more automatically, then reports the error if it still fails.
+
 ## The core workflow
 
 ```

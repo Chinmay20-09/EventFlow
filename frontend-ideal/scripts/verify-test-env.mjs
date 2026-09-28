@@ -20,14 +20,30 @@ let cookie='';
 const results=[];
 async function step(name,run){try{await run();results.push({name,ok:true});console.log(`  PASS  ${name}`)}catch(error){results.push({name,ok:false,error});console.error(`  FAIL  ${name}\n          ${error.message}`)}}
 function assert(condition,message){if(!condition)throw new Error(message)}
-async function request(path,{method='GET',body,useCookie=true,timeout=60000}={}){
- const headers={Origin:origin};
- if(useCookie&&cookie)headers.Cookie=cookie;
- if(body!==undefined)headers['Content-Type']='application/json';
- const response=await fetch(origin+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),redirect:'manual',signal:AbortSignal.timeout(timeout)});
- const text=await response.text();
- const setCookies=typeof response.headers.getSetCookie==='function'?response.headers.getSetCookie():[response.headers.get('set-cookie')].filter(Boolean);
- return {status:response.status,location:response.headers.get('location'),setCookies,text,json(){try{return JSON.parse(text)}catch{return null}}};
+// Transport-level failures (a dev server busy compiling, a dropped keep-alive
+// connection) are retried; unexpected responses never are.
+async function request(path,{method='GET',body,useCookie=true,timeout=60000,attempts=4}={}){
+ for(let attempt=1;;attempt++){
+  const headers={Origin:origin};
+  if(useCookie&&cookie)headers.Cookie=cookie;
+  if(body!==undefined)headers['Content-Type']='application/json';
+  try{
+   const response=await fetch(origin+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),redirect:'manual',signal:AbortSignal.timeout(timeout)});
+   const text=await response.text();
+   // A next dev server briefly answers 5xx while it reloads (for example after
+   // an env file changed). Retry those reads, never a write, so a real error
+   // still fails after the retries are used up.
+   if(method==='GET'&&response.status>=500&&attempt<attempts){
+    await new Promise(resolve=>setTimeout(resolve,600*attempt));
+    continue;
+   }
+   const setCookies=typeof response.headers.getSetCookie==='function'?response.headers.getSetCookie():[response.headers.get('set-cookie')].filter(Boolean);
+   return {status:response.status,location:response.headers.get('location'),setCookies,text,json(){try{return JSON.parse(text)}catch{return null}}};
+  }catch(error){
+   if(attempt>=attempts)throw error;
+   await new Promise(resolve=>setTimeout(resolve,400*attempt));
+  }
+ }
 }
 // The server sets a session cookie on login/signup and an expired one on logout.
 function captureCookie(response){for(const value of response.setCookies){if(value.startsWith(SESSION_COOKIE+'='))cookie=value.split(';')[0]}}
