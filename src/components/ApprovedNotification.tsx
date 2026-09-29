@@ -9,6 +9,7 @@ type Props = {
 export default function ApprovedNotification({ themeClasses, selectedStrategy, onDismiss }: Props) {
   return (
     <div
+      role="status"
       className={themeClasses(
         "fixed bottom-6 right-6 z-[70] bg-green-500/10 border border-green-500/30 rounded-xl p-5 shadow-xl",
       )}

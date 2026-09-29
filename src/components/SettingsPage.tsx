@@ -89,6 +89,8 @@ export default function SettingsPage({
 
           <button
             onClick={onToggleAutoAlerts}
+            aria-pressed={autoAlerts}
+            aria-label="Auto AI Alerts"
             className={`w-14 h-8 rounded-full transition ${
               autoAlerts ? "bg-blue-600" : isDark ? "bg-slate-600" : "bg-slate-300"
             }`}

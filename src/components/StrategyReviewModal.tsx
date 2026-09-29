@@ -14,7 +14,12 @@ export default function StrategyReviewModal({
   onApprove,
 }: Props) {
   return (
-    <div className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-[60]")}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Strategy review"
+      className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-[60]")}
+    >
       <div
         className={themeClasses(
           "w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-7 shadow-2xl",

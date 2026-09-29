@@ -29,7 +29,12 @@ export default function SandboxModal({
     }`
 
   return (
-    <div className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50")}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sandbox simulation"
+      className={themeClasses("fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50")}
+    >
       <div
         className={themeClasses(
           "w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-7",
