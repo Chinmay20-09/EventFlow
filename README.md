@@ -25,17 +25,16 @@ The repository root `.env` (git-ignored) is the one place for shared keys and se
 
 ```bash
 cp .env.example .env      # then fill in the values you use
-npm run env:sync          # copies the shared keys into both frontends
+npm run env:sync          # copies the shared keys into the frontend
 ```
 
-`npm run env:sync` writes each shared key into the file its app reads at startup —
-`frontend-ideal/.env.local` (Next.js) and `frontend/.env.local` (vinext) — so a key such as
-`GOOGLE_MAPS_API_KEY` only has to be added once:
+`npm run env:sync` writes each shared key into the file the app reads at startup
+(`frontend-ideal/.env.local`), so a key such as `GOOGLE_MAPS_API_KEY` only has to be added once:
 
 | Root `.env` key | Where it lands |
 | --- | --- |
-| `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `frontend-ideal/.env.local`, `frontend/.env.local` |
-| `TOMTOM_API_KEY`, `ORCHESTRATOR_URL`, `ORCHESTRATOR_TOKEN`, `EVENTFLOW_WS_URL` | `frontend-ideal/.env.local`, `frontend/.env.local` |
+| `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `frontend-ideal/.env.local` |
+| `TOMTOM_API_KEY`, `ORCHESTRATOR_URL`, `ORCHESTRATOR_TOKEN`, `EVENTFLOW_WS_URL` | `frontend-ideal/.env.local` |
 | `EVENTFLOW_DATA_DIR` | `frontend-ideal/.env.local` (development only) |
 
 - It also runs automatically at the start of `npm run dev` and `npm run test`, and as `predev`
@@ -62,7 +61,7 @@ That single command:
 1. seeds an idempotent **local development administrator** into `frontend-ideal/.eventflow-local/`
    (reusing the app's own account model and password hashing; it refuses to run with `NODE_ENV=production`),
 2. starts `frontend-ideal` (dev server) at <http://127.0.0.1:3000> — reusing an already running
-   instance instead of racing a second one, and never starting the old `frontend/` app,
+   instance instead of racing a second one,
 3. waits for real readiness by polling the app (no fixed sleeps),
 4. verifies the running application: login page, API routes, the administrator login, admin-area
    access, rejected unauthorized access, rejected wrong password, and logout,
@@ -138,7 +137,8 @@ docs/                     Domain specifications (the architecture)
   Prediction.md            EV-009  Prediction
   EV-010_Optimization.md   EV-010  Optimization
   EV-011_Simulation.md      EV-011  Simulation
-frontend/src/              Vite/React command center
+src/                       Vite/React command center (weather digital twin)
+frontend-ideal/            Next.js EventFlow app (the final frontend)
 backend/app/               FastAPI API and persistence layer
 team.docs                  Document tracker for the full EV-001 … EV-045 set
 README.md                  This file

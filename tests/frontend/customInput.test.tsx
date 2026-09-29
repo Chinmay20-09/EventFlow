@@ -10,9 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import App from "../../frontend/src/App"
-import CustomInputDialog from "../../frontend/src/CustomInputDialog"
-import { clearAccessToken } from "../../frontend/src/api"
+import App from "../../src/App"
+import CustomInputDialog from "../../src/CustomInputDialog"
+import { clearAccessToken } from "../../src/api"
 
 const STORED_EVENT = {
   event_id: 42,

@@ -26,6 +26,7 @@ dist-ssr
 # Python backend
 backend/.venv/
 backend/.env
+backend/.env.*
 backend/*.db
 __pycache__/
 *.pyc
@@ -40,3 +41,7 @@ __pycache__/
 build/
 pubspec.lock
 e2e-artifacts/
+
+# Generated simulation export (scripts/test_Crowd.ts)
+test_Crowd.latest.json
+*.tsbuildinfo

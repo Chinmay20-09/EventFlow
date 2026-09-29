@@ -1,5 +1,9 @@
 # EventFlow Frontend Migration — Documentation Index
 
+> **Historical record.** The migration source folders `ideal/` and `frontend/` described below
+> have been removed from the repository — `frontend-ideal/` is now the only frontend. These
+> documents are kept to explain where the current frontend came from and why it is built the way it is.
+>
 > **Read this first.** This folder documents the completed migration that produced `frontend-ideal/`.
 > It exists so that any future prompt/agent can answer "where is X and why is it like that"
 > **without re-reading the codebase**.

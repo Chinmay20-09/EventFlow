@@ -7,7 +7,7 @@ let loader:Promise<any>|undefined;
 function loadGoogle(){
  if(loader)return loader;
  loader=fetch('/api/map-config').then(async r=>{if(!r.ok)throw Error('Map configuration is unavailable.');return r.json()}).then((config:any)=>new Promise<any>((resolve,reject)=>{
-  if(!config.apiKey){reject(Error('Add GOOGLE_MAPS_API_KEY to frontend/.env.local, then restart npm run dev.'));return}
+  if(!config.apiKey){reject(Error('Add GOOGLE_MAPS_API_KEY to .env.local, then restart npm run dev.'));return}
   const w=window as any;if(w.google?.maps){resolve(w.google.maps);return}
   const timeout=window.setTimeout(()=>reject(Error('Google Maps did not respond. Check your connection and reload.')),20000);
   w.eventFlowGoogleReady=()=>{clearTimeout(timeout);resolve(w.google.maps);delete w.eventFlowGoogleReady};

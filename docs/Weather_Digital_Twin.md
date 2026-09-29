@@ -22,7 +22,7 @@ P1 SimulationResult ×2 → compareSimulationResults (existing P2→P1 tool) →
         ↓
 strategy/src/ai/weather_insight.ts (P2 boundary) → structured narrative + labelled heuristic confidence
         ↓
-frontend/src/components/DigitalTwinPanel.tsx  → dashboard: weather card, map, what-if slider, comparison, AI, signals
+src/components/DigitalTwinPanel.tsx          → dashboard: weather card, map, what-if slider, comparison, AI, signals
 
 SOCIAL/PUBLIC SIGNALS (parallel input)
         ↓

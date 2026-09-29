@@ -14,7 +14,7 @@ There is no OpenStreetMap iframe and no Cloudflare, ChatGPT login, or database s
    GOOGLE_MAPS_API_KEY=your_actual_key
    (Or put GOOGLE_MAPS_API_KEY in the repository root .env instead and run
    `npm run env:sync` from the root: the same key is then written into this
-   file and frontend/.env.local automatically — see the root README.)
+   file automatically — see the root README.)
 5. Run:
    npm run dev
 6. Open the localhost URL printed in the terminal.

@@ -101,8 +101,7 @@ const LONG='long-enough-password';
  await request('/api/auth','POST',{action:'login',userId:'validuser',password:'wrong'},401);
  await request('/api/auth','POST',{action:'login',userId:'validuser',password:LONG});
  assert.equal((await request('/api/auth')).access,'owner');
- console.log('PASS explicit unlock/reframe, logout, bad-password rejection and login');
- // --- Approval workflow (functional contract carried over from frontend/) ---
+ console.log('PASS explicit unlock/reframe, logout, bad-password rejection and login');  // --- Approval workflow (owner approves/declines pending accounts) ---
  cookie='';cookieB='';
  await request('/api/auth','POST',{action:'login',userId:'validuser',password:LONG});
  await requestB('/api/auth','POST',{action:'signup',userId:'second-admin',userName:'Second Admin',password:LONG});

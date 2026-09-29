@@ -16,8 +16,8 @@
 //   --port <n>     preferred port (default 3000; the next free port is used if busy)
 //   --stop         stop the running frontend-ideal dev server and exit
 //
-// The old `frontend/` app is never started. frontend-ideal is self-contained:
-// its backend is its own Next.js route handlers plus the local JSON store.
+// frontend-ideal is self-contained: its backend is its own Next.js route
+// handlers plus the local JSON store.
 import {spawn,spawnSync} from 'node:child_process';
 import {closeSync,existsSync,mkdirSync,openSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {createConnection} from 'node:net';
@@ -308,7 +308,7 @@ async function main(){
  if(spawnedHere&&foreground)console.log('  Stop it    Ctrl+C in this terminal\n');
  else if(keepServer)console.log('  Stop it    npm run test:stop\n');
  else{stopPid(state.pid);console.log('  (server stopped: --no-keep / CI)\n')}
- console.log('Open the URL above to use the application. The old frontend/ app is not started by this command.\n');
+ console.log('Open the URL above to use the application.\n');
  if(spawnedHere&&foreground){console.log('frontend-ideal is attached to this terminal — press Ctrl+C to stop it.');await new Promise(()=>{})}
 }
 

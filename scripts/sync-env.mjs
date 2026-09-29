@@ -3,10 +3,9 @@
 //
 //   npm run env:sync     (also runs automatically before `npm run dev` and `npm run test`)
 //
-// Shared keys that are set in the root .env are copied into each app's own env file:
+// Shared keys that are set in the root .env are copied into the frontend's own env file:
 //
 //   .env (root)  ->  frontend-ideal/.env.local   read by next dev / next start
-//                ->  frontend/.env.local         read by the vinext dev server
 //
 // The root Vite app already reads the root .env directly; anything it exposes to
 // the browser must use the VITE_ prefix.
@@ -39,7 +38,6 @@ const SHARED_KEYS=[
 
 const TARGETS=[
  {file:'frontend-ideal/.env.local',label:'frontend-ideal (Next.js)'},
- {file:'frontend/.env.local',label:'frontend (vinext)'},
 ];
 
 // Values with spaces, quotes or '#' are written JSON-style, which dotenv parses.

@@ -45,11 +45,12 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
     # Add columns that create_all cannot add to existing tables (auth + P4 map).
     run_startup_migrations(engine)
-    # Default development account (admin/admin123) so the frontend can sign
-    # in without the auth screen. Idempotent: created only when missing.
-    # Skipped in the test environment: the automated tests seed their own
-    # users and assert exact user ids (tests/conftest.py).
-    if settings.environment != "test":
+    # Default *development* account (admin/admin123) so the local frontend can
+    # sign in without the auth screen. Idempotent: created only when missing.
+    # Development only — a known default password is never seeded in
+    # test/staging/production, and the tests seed their own users and assert
+    # exact user ids (tests/conftest.py).
+    if settings.environment == "development":
         ensure_default_admin(engine)
     # Capture the running loop so live-update broadcasts can be scheduled
     # onto it from synchronous request handlers (see services.live_updates).

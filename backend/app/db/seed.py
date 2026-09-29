@@ -9,8 +9,10 @@ sign in without showing the auth screen:
     role:     ORGANIZER
 
 The seed is idempotent: the row is created only when neither the username
-nor the email exists, and existing users are never modified. Safe to run at
-every startup (the lifespan hook calls this after create_all/migrations).
+nor the email exists, and existing users are never modified. The lifespan hook
+calls this after create_all/migrations **in the development environment only**
+(ENVIRONMENT=development) — a known default password is never seeded in
+test/staging/production.
 """
 
 import logging
